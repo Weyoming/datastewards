@@ -1,12 +1,32 @@
 import json
 import time
-import _snowflake
+import requests
 import pandas as pd
 import streamlit as st
 from snowflake.core import Root
-from snowflake.snowpark.context import get_active_session
+from snowflake.snowpark import Session
 from snowflake.snowpark.functions import col
 from urllib.parse import urlparse
+
+
+# --- SNOWFLAKE CONNECTION FOR STREAMLIT COMMUNITY CLOUD ---
+@st.cache_resource
+def get_snowflake_session():
+    """
+    Creates a Snowflake session using credentials from Streamlit secrets.
+    For Streamlit Community Cloud deployment, add secrets in the app settings.
+    """
+    connection_parameters = {
+        "account": st.secrets["snowflake"]["account"],
+        "user": st.secrets["snowflake"]["user"],
+        "password": st.secrets["snowflake"]["password"],
+        "warehouse": st.secrets["snowflake"]["warehouse"],
+        "database": st.secrets["snowflake"]["database"],
+        "schema": st.secrets["snowflake"]["schema"],
+        "role": st.secrets["snowflake"]["role"],
+    }
+    return Session.builder.configs(connection_parameters).create()
+
 
 # Set page to wide layout
 st.set_page_config(layout="wide", page_title="HCP Data Steward")
@@ -718,17 +738,36 @@ def render_main_page(session):
     FILE = "HCK_MODEL.yaml"
 
     def send_message(prompt: str) -> dict:
+        """
+        Sends a message to Snowflake Cortex Analyst API using REST.
+        For Streamlit Community Cloud, this uses the requests library with JWT auth.
+        """
+        # Build the API URL using account from secrets
+        account = st.secrets["snowflake"]["account"]
+        # Handle account identifier format (remove region suffix if present for URL)
+        account_url = account.replace("_", "-").replace(".", "-")
+        api_url = f"https://{account_url}.snowflakecomputing.com/api/v2/cortex/analyst/message"
+        
+        # Get a fresh token from the session
+        token = session.connection.rest.token
+        
+        headers = {
+            "Authorization": f"Snowflake Token=\"{token}\"",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        
         request_body = {
             "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
             "semantic_model_file": f"@{DATABASE}.{SCHEMA}.{STAGE}/{FILE}",
         }
-        resp = _snowflake.send_snow_api_request(
-            "POST", f"/api/v2/cortex/analyst/message", {}, {}, request_body, {}, 30000,
-        )
-        if resp["status"] < 400:
-            return json.loads(resp["content"])
+        
+        resp = requests.post(api_url, headers=headers, json=request_body, timeout=30)
+        
+        if resp.status_code < 400:
+            return resp.json()
         else:
-            raise Exception(f"Failed request with status {resp['status']}: {resp}")
+            raise Exception(f"Failed request with status {resp.status_code}: {resp.text}")
 
     def process_message(prompt: str) -> None:
         st.session_state.messages.clear()
@@ -960,7 +999,7 @@ if "show_confirm_dialog" not in st.session_state:
 if "show_primary_confirm_dialog" not in st.session_state:
     st.session_state.show_primary_confirm_dialog = False
 
-session = get_active_session()
+session = get_snowflake_session()
 # Corrected popup display logic
 if st.session_state.current_view == "main":
     render_main_page(session)
