@@ -317,13 +317,25 @@ def render_enrichment_page(session, selected_hcp_df):
     #st.title("📑 Current vs. Proposed Comparison Report")
     st.markdown("<h3>📑 Current vs. Proposed Comparison Report</h3>", unsafe_allow_html=True)
     
+    # Check if this is a direct API search (fallback mode with no HCP selection)
+    is_direct_api_search = st.session_state.get("direct_api_search", False)
+    direct_api_search_name = st.session_state.get("direct_api_search_name", "")
 
-    if selected_hcp_df.empty:
+    if selected_hcp_df.empty and not is_direct_api_search:
         st.warning("No HCP data was provided for enrichment.")
         st.stop()
-        
-    selected_record = selected_hcp_df.iloc[0]
-    current_data_dict = { 'ID': selected_record.get('ID', ''), 'Name': selected_record.get('NAME', ''), 'NPI': selected_record.get('NPI', ''), 'Address Line1': selected_record.get('ADDRESS1', ''), 'Address Line2': selected_record.get('ADDRESS2', ''), 'City': selected_record.get('CITY', ''), 'State': selected_record.get('STATE', ''), 'ZIP': selected_record.get('ZIP', '') }
+    
+    # For direct API search, use the dummy record; otherwise use selected record
+    if is_direct_api_search and not selected_hcp_df.empty:
+        selected_record = selected_hcp_df.iloc[0]
+        # Current data will be empty (showing N/A values)
+        current_data_dict = { 'ID': '', 'Name': direct_api_search_name, 'NPI': '', 'Address Line1': '', 'Address Line2': '', 'City': '', 'State': '', 'ZIP': '' }
+    elif not selected_hcp_df.empty:
+        selected_record = selected_hcp_df.iloc[0]
+        current_data_dict = { 'ID': selected_record.get('ID', ''), 'Name': selected_record.get('NAME', ''), 'NPI': selected_record.get('NPI', ''), 'Address Line1': selected_record.get('ADDRESS1', ''), 'Address Line2': selected_record.get('ADDRESS2', ''), 'City': selected_record.get('CITY', ''), 'State': selected_record.get('STATE', ''), 'ZIP': selected_record.get('ZIP', '') }
+    else:
+        st.warning("No HCP data was provided for enrichment.")
+        st.stop()
     current_df = pd.DataFrame([current_data_dict])
 
     # Placeholder for a potential dialog to display over the main content
@@ -498,10 +510,19 @@ def render_enrichment_page(session, selected_hcp_df):
                     st.session_state.show_primary_confirm_dialog = False
                     st.rerun()
         return
-#end of Placeholder for a potential dialog to display over the main content
-
+    
     with st.spinner("🚀 Contacting AI Assistant for Data Enrichment..."):
-        proposed_df = get_enriched_data_from_llm(session, selected_hcp_df)
+        # For direct API search, use the user's input name directly
+        if is_direct_api_search and direct_api_search_name:
+            try:
+                hcp_data = get_details_for_hcp(direct_api_search_name)
+                hcp_data = standardize_value_lengths(hcp_data)
+                proposed_df = pd.DataFrame(hcp_data)
+            except Exception as e:
+                st.error(f"An error occurred during the API search: {e}")
+                proposed_df = pd.DataFrame()
+        else:
+            proposed_df = get_enriched_data_from_llm(session, selected_hcp_df)
         
     try:
         if current_df.empty or proposed_df.empty:
@@ -511,13 +532,15 @@ def render_enrichment_page(session, selected_hcp_df):
         st.error("One of the dataframes is invalid. Please check the data source.")
         st.stop()
 
-    selected_id = int(current_df['ID'].iloc[0])
+    # For direct API search, use empty string as ID; otherwise use the actual ID
+    if is_direct_api_search:
+        selected_id = 0  # Use 0 as placeholder ID for direct API search
+    else:
+        selected_id = int(current_df['ID'].iloc[0])
     current_record = current_df.iloc[0]
     proposed_record = proposed_df.iloc[0]
 
-
-#session state for proposed record
-
+    #session state for proposed record
     st.session_state.proposed_record = proposed_record
     
     if "demographic_expander_state" not in st.session_state:
@@ -838,9 +861,19 @@ def render_main_page(session):
                         st.info("We couldn't find any records matching your search.", icon="ℹ️")
                         # Show red button for direct API search fallback
                         if st.button("Still want to proceed with API Search?", key="api_search_fallback", type="primary", help="Search external API directly with the name you entered"):
+                            # Create a dummy HCP record with empty data and user's input name
+                            user_input_name = st.session_state.get("last_prompt", "")
+                            dummy_record = pd.DataFrame([{
+                                'ID': '', 'NAME': user_input_name, 'NPI': '', 'ADDRESS1': '', 'ADDRESS2': '',
+                                'CITY': '', 'STATE': '', 'ZIP': '', 'PREFIX': '', 'FIRST_NM': '',
+                                'MIDDLE_NM': '', 'LAST_NM': '', 'SUFFIX': '', 'DEGREE': '', 'COUNTRY': '',
+                                'PRIMARY_AFFL_HCO_ACCOUNT_ID': None
+                            }])
+                            st.session_state.results_df = dummy_record
+                            st.session_state.selected_hcp_id = ''
                             st.session_state.direct_api_search = True
-                            st.session_state.direct_api_search_name = st.session_state.get("last_prompt", "")
-                            st.session_state.current_view = "direct_enrichment_page"
+                            st.session_state.direct_api_search_name = user_input_name
+                            st.session_state.current_view = "enrichment_page"
                             st.rerun()
         if not sql_item_found:
             # Check if assistant message contains "couldn't"
@@ -848,9 +881,19 @@ def render_main_page(session):
             if "couldn't" in assistant_text.lower():
                 st.info("The assistant couldn't process your request.", icon="ℹ️")
                 if st.button("Still want to proceed with API Search?", key="api_search_fallback_no_sql", type="primary", help="Search external API directly with the name you entered"):
+                    # Create a dummy HCP record with empty data and user's input name
+                    user_input_name = st.session_state.get("last_prompt", "")
+                    dummy_record = pd.DataFrame([{
+                        'ID': '', 'NAME': user_input_name, 'NPI': '', 'ADDRESS1': '', 'ADDRESS2': '',
+                        'CITY': '', 'STATE': '', 'ZIP': '', 'PREFIX': '', 'FIRST_NM': '',
+                        'MIDDLE_NM': '', 'LAST_NM': '', 'SUFFIX': '', 'DEGREE': '', 'COUNTRY': '',
+                        'PRIMARY_AFFL_HCO_ACCOUNT_ID': None
+                    }])
+                    st.session_state.results_df = dummy_record
+                    st.session_state.selected_hcp_id = ''
                     st.session_state.direct_api_search = True
-                    st.session_state.direct_api_search_name = st.session_state.get("last_prompt", "")
-                    st.session_state.current_view = "direct_enrichment_page"
+                    st.session_state.direct_api_search_name = user_input_name
+                    st.session_state.current_view = "enrichment_page"
                     st.rerun()
             else:
                 st.info("The assistant did not return a SQL query for this prompt. It may be a greeting or a clarifying question.")
@@ -1116,7 +1159,15 @@ elif st.session_state.current_view == "enrichment_page":
     if st.session_state.show_popup:
         show_popup_without_button(popup_placeholder, st.session_state.popup_message_info['type'], st.session_state.popup_message_info) 
 
-    if st.session_state.selected_hcp_id and st.session_state.results_df is not None:
+    # Check if this is a direct API search (fallback mode) or regular HCP selection
+    is_direct_api_search = st.session_state.get("direct_api_search", False)
+    
+    if is_direct_api_search and st.session_state.results_df is not None:
+        # Direct API search flow - use the dummy record
+        selected_record_df = st.session_state.results_df
+        if not st.session_state.show_popup:
+            render_enrichment_page(session, selected_record_df)
+    elif st.session_state.selected_hcp_id and st.session_state.results_df is not None:
         selected_record_df = st.session_state.results_df[
             st.session_state.results_df["ID"] == st.session_state.selected_hcp_id
         ]
