@@ -1038,35 +1038,41 @@ class SearchResponse(BaseModel):
     
 
 def get_consolidated_data_for_hcp(hcp_data, model_name="sonar", use_pro_search=False):
+    # Extract key info for better search
+    hcp_name = hcp_data.get('NAME', '') if isinstance(hcp_data, dict) else str(hcp_data)
+    hcp_npi = hcp_data.get('NPI', '') if isinstance(hcp_data, dict) else ''
+    
     user_query = f"""
-    Given the following information about a health care provider (HCP) in the US:
-    {hcp_data}
+    Search the web for information about this US healthcare provider:
+    
+    Name: {hcp_name}
+    NPI: {hcp_npi}
 
-    Search for and return the following information:
+    Find and return:
 
-    **Part 1 - HCP Demographics:**
-    - Name (full name of the healthcare provider)
-    - Address Line 1 (street address)
-    - Address Line 2 (suite, unit, floor if applicable, otherwise empty string)
-    - City (in ALL CAPS)
-    - State (2-letter US state code, e.g., TX for Texas)
-    - ZIP (5-digit zipcode)
+    **Part 1 - Provider Demographics (verify/update from web sources):**
+    - Name: Full name of the doctor/provider
+    - Address Line 1: Current practice street address
+    - Address Line 2: Suite/unit number (or empty string if none)
+    - City: City name in ALL CAPS
+    - State: 2-letter US state code (e.g., TX, CA, NY)
+    - ZIP: 5-digit zipcode
 
-    **Part 2 - HCO (Healthcare Organization) Affiliation:**
-    Search for the hospital, clinic, medical group, or healthcare organization where this provider practices.
-    - NPI: The NPI number of the affiliated healthcare organization (10-digit number)
-    - HCO_ID: Organization identifier if available, otherwise use "N/A"
-    - HCO_Name: Full name of the healthcare organization (hospital, clinic, medical group)
-    - HCO_Address1: Street address of the healthcare organization
-    - HCO_City: City where the organization is located (in ALL CAPS)
+    **Part 2 - Practice/Hospital Affiliation:**
+    Search NPI Registry, hospital websites, Healthgrades, Vitals, WebMD, or Doximity for where this doctor practices.
+    - NPI: The organization's NPI number (10 digits) - search npiregistry.cms.hhs.gov
+    - HCO_ID: Use the organization NPI as ID, or "N/A" if not found
+    - HCO_Name: Name of the hospital, medical group, or clinic where they practice
+    - HCO_Address1: Street address of the practice location
+    - HCO_City: City in ALL CAPS
     - HCO_State: 2-letter state code
     - HCO_ZIP: 5-digit zipcode
 
-    **Important Instructions:**
-    1. For HCO affiliation, search for where this provider currently practices medicine
-    2. Look for hospital affiliations, clinic names, or medical group practices
-    3. If multiple affiliations exist, return the primary/main practice location
-    4. All fields must have values - use "N/A" if information cannot be found
+    **Search Tips:**
+    - Search "{hcp_name} doctor hospital affiliation"
+    - Search "{hcp_name} NPI {hcp_npi}" on npiregistry.cms.hhs.gov
+    - Look for "practices at", "affiliated with", "hospital privileges"
+    - Return actual found data, not "N/A" unless truly not findable
     """
 
     completion = client.chat.completions.create(
