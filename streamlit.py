@@ -639,7 +639,7 @@ def render_enrichment_page(session, selected_hcp_df):
 
         # Build ai_found_hcos from proposed_hcp_affiliation_data_df
         ai_found_hcos = []
-        st.write("DEBUG - proposed_hcp_affiliation_data_df:", proposed_hcp_affiliation_data_df)
+        # st.write("DEBUG - proposed_hcp_affiliation_data_df:", proposed_hcp_affiliation_data_df)
         if not proposed_hcp_affiliation_data_df.empty:
             for index, row in proposed_hcp_affiliation_data_df.iterrows():
                 hco_name = row.get('HCO_Name')
@@ -1038,15 +1038,34 @@ class SearchResponse(BaseModel):
 
 def get_consolidated_data_for_hcp(hcp_data, model_name="sonar"):
     user_query = f"""
-    Given the following information about a health care provider in the US:
+    Given the following information about a health care provider (HCP) in the US:
     {hcp_data}
 
-    Return the following information:
-    1. Name, Address Line 1, Address Line 2, City (All CAPS), US State Code (E.g. TX for Texas), Zipcode of the health care provider
-    2. NPI, HCO ID, HCO Name, HCO Address1, HCO City, HCO State, HCO Zipcode of the primary affiliation of the health care provider
+    Search for and return the following information:
 
-    Additional Notes:
-    1. If the health care provider is affiliated with multiple HCOs, return the primary affiliation (i.e. the HCO with the lowest HCO ID)
+    **Part 1 - HCP Demographics:**
+    - Name (full name of the healthcare provider)
+    - Address Line 1 (street address)
+    - Address Line 2 (suite, unit, floor if applicable, otherwise empty string)
+    - City (in ALL CAPS)
+    - State (2-letter US state code, e.g., TX for Texas)
+    - ZIP (5-digit zipcode)
+
+    **Part 2 - HCO (Healthcare Organization) Affiliation:**
+    Search for the hospital, clinic, medical group, or healthcare organization where this provider practices.
+    - NPI: The NPI number of the affiliated healthcare organization (10-digit number)
+    - HCO_ID: Organization identifier if available, otherwise use "N/A"
+    - HCO_Name: Full name of the healthcare organization (hospital, clinic, medical group)
+    - HCO_Address1: Street address of the healthcare organization
+    - HCO_City: City where the organization is located (in ALL CAPS)
+    - HCO_State: 2-letter state code
+    - HCO_ZIP: 5-digit zipcode
+
+    **Important Instructions:**
+    1. For HCO affiliation, search for where this provider currently practices medicine
+    2. Look for hospital affiliations, clinic names, or medical group practices
+    3. If multiple affiliations exist, return the primary/main practice location
+    4. All fields must have values - use "N/A" if information cannot be found
     """
 
     completion = client.chat.completions.create(
