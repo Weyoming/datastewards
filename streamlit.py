@@ -639,6 +639,7 @@ def render_enrichment_page(session, selected_hcp_df):
 
         # Build ai_found_hcos from proposed_hcp_affiliation_data_df
         ai_found_hcos = []
+        st.write("DEBUG - proposed_hcp_affiliation_data_df:", proposed_hcp_affiliation_data_df)
         if not proposed_hcp_affiliation_data_df.empty:
             for index, row in proposed_hcp_affiliation_data_df.iterrows():
                 hco_name = row.get('HCO_Name')
