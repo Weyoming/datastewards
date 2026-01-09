@@ -301,7 +301,7 @@ def render_enrichment_page(session, selected_hcp_df):
             full_cmd = f"SELECT snowflake.cortex.complete('{MODEL_NAME}', $${final_prompt_with_context}$$) as response"
             #st.write(full_cmd)
 
-            api_response = get_consolidated_data_for_hcp(selected_record)
+            api_response = get_consolidated_data_for_hcp(selected_record, model="sonar-pro")
             # hcp_data = standardize_value_lengths(api_response.hcp_data)
             # df_response = pd.DataFrame(hcp_data)
                                               
