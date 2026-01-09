@@ -299,8 +299,8 @@ def render_enrichment_page(session, selected_hcp_df):
             full_cmd = f"SELECT snowflake.cortex.complete('{MODEL_NAME}', $${final_prompt_with_context}$$) as response"
             #st.write(full_cmd)
 
-            hcp_data = get_details_for_hcp(selected_record.get("NAME", ""))
-            hcp_data = standardize_value_lengths(hcp_data)
+            api_response = get_details_for_hcp(selected_record)
+            hcp_data = standardize_value_lengths(api_response.hcp_data)
             df_response = pd.DataFrame(hcp_data)
                                               
             if df_response.empty:
@@ -1010,9 +1010,32 @@ class HCPData(BaseModel):
     City: list[str]
     State: list[str]
 
-def get_details_for_hcp(hcp_name, model_name="sonar"):
+class HCPAffiliationData(BaseModel):
+    NPI: list[str]
+    HCO_ID: list[str]
+    HCO_Name: list[str]
+    HCO_Address1: list[str]
+    HCO_City: list[str]
+    HCO_State: list[str]
+    HCO_ZIP: list[str]
+
+class SearchResponse(BaseModel):
+    hcp_data: HCPData
+    hcp_affiliation_data: HCPAffiliationData
+    
+
+def get_details_for_hcp(hcp_data, model_name="sonar"):
     user_query = f"""
-    Give me the Name, Address Line 1, Address Line 2, City (All CAPS), US State Code (E.g. TX for Texas), Zipcode of the health care provider in US named {hcp_name}
+    Given the following information about a health care provider in the US:
+    {hcp_data}
+
+    Return the following information:
+    1. Name, Address Line 1, Address Line 2, City (All CAPS), US State Code (E.g. TX for Texas), Zipcode of the health care provider
+    2. NPI, HCO ID, HCO Name, HCO Address1, HCO City, HCO State, HCO Zipcode of the primary affiliation of the health care provider
+
+    Additional Notes:
+    1. If the health care provider is not affiliated with any HCO, return N/A for HCO ID, HCO Name, HCO Address1, HCO City, HCO State, HCO Zipcode
+    2. If the health care provider is affiliated with multiple HCOs, return the primary affiliation (i.e. the HCO with the lowest HCO ID)
     """
 
     completion = client.chat.completions.create(
@@ -1021,7 +1044,7 @@ def get_details_for_hcp(hcp_name, model_name="sonar"):
         response_format={
             "type": "json_schema",
             "json_schema": {
-                "schema": HCPData.model_json_schema()
+                "schema": SearchResponse.model_json_schema()
             }
         }
     )
