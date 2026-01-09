@@ -1038,7 +1038,9 @@ class SearchResponse(BaseModel):
     
 
 def get_consolidated_data_for_hcp(hcp_data, model_name="sonar", use_pro_search=False):
-    # Extract key info for better search
+    # Extract key info for better search - handle both dict and pandas Series
+    if hasattr(hcp_data, 'to_dict'):
+        hcp_data = hcp_data.to_dict()
     hcp_name = hcp_data.get('NAME', '') if isinstance(hcp_data, dict) else str(hcp_data)
     hcp_npi = hcp_data.get('NPI', '') if isinstance(hcp_data, dict) else ''
     
