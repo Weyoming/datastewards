@@ -301,7 +301,7 @@ def render_enrichment_page(session, selected_hcp_df):
             full_cmd = f"SELECT snowflake.cortex.complete('{MODEL_NAME}', $${final_prompt_with_context}$$) as response"
             #st.write(full_cmd)
 
-            api_response = get_consolidated_data_for_hcp(selected_record, model="sonar-pro")
+            api_response = get_consolidated_data_for_hcp(selected_record, model_name="sonar-pro", use_pro_search=True)
             # hcp_data = standardize_value_lengths(api_response.hcp_data)
             # df_response = pd.DataFrame(hcp_data)
                                               
@@ -1037,7 +1037,7 @@ class SearchResponse(BaseModel):
     hcp_affiliation_data: HCPAffiliationData
     
 
-def get_consolidated_data_for_hcp(hcp_data, model_name="sonar"):
+def get_consolidated_data_for_hcp(hcp_data, model_name="sonar", use_pro_search=False):
     user_query = f"""
     Given the following information about a health care provider (HCP) in the US:
     {hcp_data}
@@ -1072,6 +1072,9 @@ def get_consolidated_data_for_hcp(hcp_data, model_name="sonar"):
     completion = client.chat.completions.create(
         model=model_name,
         messages=[{"role": "user", "content": user_query}],
+        web_search_options={
+            "search_type": "pro" if use_pro_search else "fast"
+        },  
         response_format={
             "type": "json_schema",
             "json_schema": {
