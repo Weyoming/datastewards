@@ -287,6 +287,8 @@ def render_enrichment_page(session, selected_hcp_df):
         - The *_Score represents your confidence of proposed information being correct verified through multiple sources for the HCP. For eg: For an HCP given in context, if you are able to verify it's demographic information from multiple sources then score would be high compared to if the information is only fetched from one source. 
         -  Also in the *_Score fields, populate the confidence score in percentage(out of 100) followed by '%' and then followed by your reason for assigning that score to the respective field value proposed.
         """
+
+        # Connect --> Connection string
     
         try:
             response = svc.search(search_query, COLUMNS, limit=NUM_CHUNKS)
@@ -299,15 +301,16 @@ def render_enrichment_page(session, selected_hcp_df):
             full_cmd = f"SELECT snowflake.cortex.complete('{MODEL_NAME}', $${final_prompt_with_context}$$) as response"
             #st.write(full_cmd)
 
-            api_response = get_details_for_hcp(selected_record)
-            hcp_data = standardize_value_lengths(api_response.hcp_data)
-            df_response = pd.DataFrame(hcp_data)
+            api_response = get_consolidated_data_for_hcp(selected_record)
+            # hcp_data = standardize_value_lengths(api_response.hcp_data)
+            # df_response = pd.DataFrame(hcp_data)
                                               
-            if df_response.empty:
-                st.warning("The AI assistant returned an empty response.")
-                return pd.DataFrame()
-            else:
-                return df_response
+            # if df_response.empty:
+            #     st.warning("The AI assistant returned an empty response.")
+            #     return pd.DataFrame()
+            # else:
+            #     return df_response
+            return api_response
         
         except Exception as e:
             st.error(f"An error occurred during the AI enrichment process: {e}")
@@ -501,8 +504,11 @@ def render_enrichment_page(session, selected_hcp_df):
 #end of Placeholder for a potential dialog to display over the main content
 
     with st.spinner("🚀 Contacting AI Assistant for Data Enrichment..."):
-        proposed_df = get_enriched_data_from_llm(session, selected_hcp_df)
-        
+        # proposed_df = get_enriched_data_from_llm(session, selected_hcp_df)
+        api_response = get_enriched_data_from_llm(session, selected_hcp_df)
+        proposed_hcp_data_df = pd.DataFrame(api_response['hcp_data'])
+        proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hcp_affiliation_data'])
+
     try:
         if current_df.empty or proposed_df.empty:
             st.warning("Could not generate a comparison report.")
@@ -513,12 +519,12 @@ def render_enrichment_page(session, selected_hcp_df):
 
     selected_id = int(current_df['ID'].iloc[0])
     current_record = current_df.iloc[0]
-    proposed_record = proposed_df.iloc[0]
+    proposed_hcp_data_record = proposed_hcp_data_df.iloc[0]
 
 
 #session state for proposed record
 
-    st.session_state.proposed_record = proposed_record
+    st.session_state.proposed_hcp_data_record = proposed_hcp_data_record
     
     if "demographic_expander_state" not in st.session_state:
         st.session_state.demographic_expander_state = False
@@ -552,10 +558,10 @@ def render_enrichment_page(session, selected_hcp_df):
 
         for field_label, col_name in provider_mapping.items():
             current_val = current_record.get(col_name, "")
-            proposed_val = proposed_record.get(col_name, "")
-            score = proposed_record.get(f"{col_name}_Score", 0)
+            proposed_val = proposed_hcp_data_record.get(col_name, "")
+            score = proposed_hcp_data_record.get(f"{col_name}_Score", 0)
             
-            source_data = proposed_record.get(f"{col_name}_Source")
+            source_data = proposed_hcp_data_record.get(f"{col_name}_Source")
             source_display = "N/A"
             if isinstance(source_data, list) and source_data:
                 generic_urls = []
@@ -630,18 +636,20 @@ def render_enrichment_page(session, selected_hcp_df):
         if hcp_npi:
             query = f"SELECT * FROM HCP_HCO_AFFILIATION WHERE HCP_NPI = '{hcp_npi}'"
             db_affiliations_df = session.sql(query).to_pandas()
-        
+
+        # Build ai_found_hcos from proposed_hcp_affiliation_data_df
         ai_found_hcos = []
-        for i in [1, 2, 3]:
-            hco_name = proposed_record.get(f"HCO {i} Name")
-            if pd.notna(hco_name) and str(hco_name).strip() != "":
-                ai_found_hcos.append({
-                    "HCO ID": proposed_record.get(f"HCO {i} ID"),
-                    "HCO NAME": hco_name, "HCO NPI": proposed_record.get(f"HCO {i} NPI"),
-                    "HCO ADDRESS": f"{proposed_record.get(f'HCO {i} Address Line1', '')}, {proposed_record.get(f'HCO {i} Address Line2', '')}".strip(", "),
-                    "HCO CITY": proposed_record.get(f"HCO {i} City", ""), "HCO STATE": proposed_record.get(f"HCO {i} State", ""),"HCO ZIP": proposed_record.get(f"HCO {i} ZIP", ""),
-                })
-        
+        if not proposed_hcp_affiliation_data_df.empty:
+            for index, row in proposed_hcp_affiliation_data_df.iterrows():
+                hco_name = row.get('HCO_Name')
+                if pd.notna(hco_name) and str(hco_name).strip() != "":
+                    ai_found_hcos.append({
+                        "HCO ID": row.get('HCO_ID'),
+                        "HCO NAME": hco_name, "HCO NPI": row.get('NPI'),
+                        "HCO ADDRESS": row.get('HCO_Address1', ''),
+                        "HCO CITY": row.get('HCO_City', ''), "HCO STATE": row.get('HCO_State', ''), "HCO ZIP": row.get('HCO_ZIP', ''),
+                    })
+
         all_affiliations = {}
         if not db_affiliations_df.empty:
             for index, row in db_affiliations_df.iterrows():
@@ -653,14 +661,14 @@ def render_enrichment_page(session, selected_hcp_df):
                     "HCO ADDRESS": f"{row.get('HCO_ADDRESS1', '')}, {row.get('HCO_ADDRESS2', '')}".strip(", "),
                     "HCO CITY": row.get('HCO_CITY'), "HCO STATE": row.get('HCO_STATE'), "HCO ZIP": row.get('HCO_ZIP'),
                 }
-        
+
         for hco in ai_found_hcos:
             hco_id = hco.get('HCO ID')
             if not hco_id or hco_id in all_affiliations: continue
             hco["SOURCE"] = "Generated by AI"
             hco["HCP_NPI"] = None
             all_affiliations[hco_id] = hco
-            
+
         if not all_affiliations:
             st.info("No HCO affiliations were found.")
         else:
@@ -809,8 +817,10 @@ def render_main_page(session):
                     if not df.empty:
                         st.session_state.results_df = df
                         st.write("Please select a record from the table to proceed:")
+                        # Define Column Sizes & Heading Names
                         cols = st.columns((0.8, 0.8, 1.2, 1, 2, 1, 0.5))
                         headers = ["Select", "ID", "Name", "NPI", "Address", "City", "State"]
+
                         for col_header, header_name in zip(cols, headers):
                             col_header.markdown(f"**{header_name}**")
 
@@ -1024,7 +1034,7 @@ class SearchResponse(BaseModel):
     hcp_affiliation_data: HCPAffiliationData
     
 
-def get_details_for_hcp(hcp_data, model_name="sonar"):
+def get_consolidated_data_for_hcp(hcp_data, model_name="sonar"):
     user_query = f"""
     Given the following information about a health care provider in the US:
     {hcp_data}
