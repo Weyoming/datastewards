@@ -1044,8 +1044,7 @@ def get_consolidated_data_for_hcp(hcp_data, model_name="sonar"):
     2. NPI, HCO ID, HCO Name, HCO Address1, HCO City, HCO State, HCO Zipcode of the primary affiliation of the health care provider
 
     Additional Notes:
-    1. If the health care provider is not affiliated with any HCO, return N/A for HCO ID, HCO Name, HCO Address1, HCO City, HCO State, HCO Zipcode
-    2. If the health care provider is affiliated with multiple HCOs, return the primary affiliation (i.e. the HCO with the lowest HCO ID)
+    1. If the health care provider is affiliated with multiple HCOs, return the primary affiliation (i.e. the HCO with the lowest HCO ID)
     """
 
     completion = client.chat.completions.create(
