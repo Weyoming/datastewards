@@ -510,7 +510,7 @@ def render_enrichment_page(session, selected_hcp_df):
         proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hcp_affiliation_data'])
 
     try:
-        if current_df.empty or proposed_df.empty:
+        if current_df.empty or proposed_hcp_data_df.empty:
             st.warning("Could not generate a comparison report.")
             st.stop()
     except AttributeError:
