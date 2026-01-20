@@ -816,14 +816,14 @@ def render_main_page(session):
                             st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
 
                             # Define the fields for the new two-column layout
-                            identity_fields = [
-                                ("Prefix", "PREFIX"),
-                                ("First Name", "FIRST_NM"),
-                                ("Middle Name", "MIDDLE_NM"),
-                                ("Last Name", "LAST_NM"),
-                                ("Suffix", "SUFFIX"),
-                                ("Degree", "DEGREE"),
-                            ]
+                            # identity_fields = [
+                            #     ("Prefix", "PREFIX"),
+                            #     ("First Name", "FIRST_NM"),
+                            #     ("Middle Name", "MIDDLE_NM"),
+                            #     ("Last Name", "LAST_NM"),
+                            #     ("Suffix", "SUFFIX"),
+                            #     ("Degree", "DEGREE"),
+                            # ]
                             address_fields = [
                                 ("Address Line 1", "ADDRESS1"),
                                 ("Address Line 2", "ADDRESS2"),
