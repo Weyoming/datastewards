@@ -916,15 +916,16 @@ client = Perplexity()
 
 # provider_mapping = { "Name": "Name", "Address Line 1": "Address Line1", "Address Line 2": "Address Line2", "City": "City", "State": "State", "ZIP Code": "ZIP" }
 
-class HCPData(BaseModel):
+class HCOData(BaseModel):
     Name: list[str]
     address_line_1: List[str] = Field(..., alias="Address Line1")
     address_line_2: List[str] = Field(..., alias="Address Line2")
     ZIP: list[str]
     City: list[str]
     State: list[str]
+    Country: list[str]
 
-class HCPAffiliationData(BaseModel):
+class HCOAffiliationData(BaseModel):
     NPI: list[str]
     HCO_ID: list[str]
     HCO_Name: list[str]
@@ -934,28 +935,26 @@ class HCPAffiliationData(BaseModel):
     HCO_ZIP: list[str]
 
 class SearchResponse(BaseModel):
-    hcp_data: HCPData
-    hcp_affiliation_data: HCPAffiliationData
+    hco_data: HCOData
+    hco_affiliation_data: HCOAffiliationData
     
 
-def get_consolidated_data_for_hcp(hcp_data, model_name="sonar", use_pro_search=False):
+def get_consolidated_data_for_hcp(hco_data, model_name="sonar", use_pro_search=False):
     # Extract key info for better search - handle both dict and pandas Series
-    if hasattr(hcp_data, 'to_dict'):
-        hcp_data = hcp_data.to_dict()
-    hcp_name = hcp_data.get('NAME', '') if isinstance(hcp_data, dict) else str(hcp_data)
-    hcp_npi = hcp_data.get('NPI', '') if isinstance(hcp_data, dict) else ''
+    if hasattr(hco_data, 'to_dict'):
+        hco_data = hco_data.to_dict()
+    hco_name = hco_data.get('NAME', '') if isinstance(hco_data, dict) else str(hco_data)
     
     user_query = f"""
-    Search the web for information about this US healthcare provider:
+    Search the web for information about this US healthcare organization:
     
-    Name: {hcp_name}
-    NPI: {hcp_npi}
+    Name: {hco_name}
 
     Find and return:
 
-    **Part 1 - Provider Demographics (verify/update from web sources):**
-    - Name: Full name of the doctor/provider
-    - Address Line 1: Current practice street address
+    **Part 1 - Health Care Organization Details (verify/update from web sources):**
+    - Name: Full name of the healthcare organization
+    - Address Line 1: Current Address Line 1
     - Address Line 2: Suite/unit number (or empty string if none)
     - City: City name in ALL CAPS
     - State: 2-letter US state code (e.g., TX, CA, NY)
@@ -972,9 +971,6 @@ def get_consolidated_data_for_hcp(hcp_data, model_name="sonar", use_pro_search=F
     - HCO_ZIP: 5-digit zipcode
 
     **Search Tips:**
-    - Search "{hcp_name} doctor hospital affiliation"
-    - Search "{hcp_name} NPI {hcp_npi}" on npiregistry.cms.hhs.gov
-    - Look for "practices at", "affiliated with", "hospital privileges"
     - Return actual found data, not "N/A" unless truly not findable
     """
 
