@@ -834,7 +834,8 @@ def render_main_page(session):
                             ]
 
                             # Create two internal columns for the key-value pairs
-                            col_identity, col_address = st.columns(1)
+                            # col_identity, col_address = st.columns(1)
+                            col_address = st.columns(1)
 
                             # Render Identity Fields (Left Column)
                             # for label, key in identity_fields:
