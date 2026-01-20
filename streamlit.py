@@ -726,10 +726,12 @@ def render_main_page(session):
                 selected_record_df = st.session_state.results_df[
                     st.session_state.results_df["ID"] == st.session_state.selected_hco_id
                 ]
+
                 
                 if not selected_record_df.empty:
                     
                     selected_record = selected_record_df.iloc[0]
+                    st.write(selected_record)
                     
                     # --- Start Two-Column Layout for Details Sections (Side-by-Side Below Search) ---
                     details_col_left, details_col_right = st.columns(2)
