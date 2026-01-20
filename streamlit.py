@@ -153,7 +153,15 @@ def render_enrichment_page(session, selected_hco_df):
         st.stop()
         
     selected_record = selected_hco_df.iloc[0]
-    current_data_dict = { 'ID': selected_record.get('ID', ''), 'Name': selected_record.get('NAME', ''), 'NPI': selected_record.get('NPI', ''), 'Address Line1': selected_record.get('ADDRESS1', ''), 'Address Line2': selected_record.get('ADDRESS2', ''), 'City': selected_record.get('CITY', ''), 'State': selected_record.get('STATE', ''), 'ZIP': selected_record.get('ZIP', '') }
+    
+    # Helper to get value with fallback to HCO_ prefixed column
+    def get_val(record, key):
+        val = record.get(key)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            val = record.get(f"HCO_{key}")
+        return val if val is not None and not (isinstance(val, float) and pd.isna(val)) else ''
+    
+    current_data_dict = { 'ID': get_val(selected_record, 'ID'), 'Name': get_val(selected_record, 'NAME'), 'NPI': get_val(selected_record, 'NPI'), 'Address Line1': get_val(selected_record, 'ADDRESS1'), 'Address Line2': get_val(selected_record, 'ADDRESS2'), 'City': get_val(selected_record, 'CITY'), 'State': get_val(selected_record, 'STATE'), 'ZIP': get_val(selected_record, 'ZIP') }
     current_df = pd.DataFrame([current_data_dict])
 
     # Placeholder for a potential dialog to display over the main content
@@ -177,13 +185,13 @@ def render_enrichment_page(session, selected_hco_df):
             changes_to_display = []
             for field_label, db_col in provider_mapping.items():
                 if field_label in approved_df_cols:
-                    current_val = selected_record.get(db_col)
+                    current_val = get_val(selected_record, db_col)
                     proposed_val = proposed_record.get(field_label)
                     changes_to_display.append([field_label, current_val, proposed_val])
             
             if changes_to_display:
                 st.markdown("---")
-                st.markdown(f"**Changes to be applied for Account ID: `{selected_record.get('ID')}`**")
+                st.markdown(f"**Changes to be applied for Account ID: `{get_val(selected_record, 'ID')}`**")
                 
                 # Use st.columns to simulate a two-column table for styling
                 cols_header = st.columns([2, 2, 2])
@@ -204,7 +212,9 @@ def render_enrichment_page(session, selected_hco_df):
             # Table 2: All other record details (not being changed)
             remaining_details_to_display = []
             all_fields = list(selected_record.index)
-            change_fields = [provider_mapping[col] for col in approved_df_cols] + ["ID"]
+            # Include both ID and HCO_ID variants in change_fields
+            change_fields = [provider_mapping[col] for col in approved_df_cols] + ["ID", "HCO_ID"]
+            change_fields += [f"HCO_{provider_mapping[col]}" for col in approved_df_cols]
             
             for field in all_fields:
                 if field not in change_fields:
@@ -293,8 +303,8 @@ def render_enrichment_page(session, selected_hco_df):
             primary_change_df = pd.DataFrame({
                 "Field": ["ID", "Name", "Current Primary HCO", "Proposed Primary HCO"],
                 "Value": [
-                    selected_record.get('ID'),
-                    selected_record.get('NAME'),
+                    get_val(selected_record, 'ID'),
+                    get_val(selected_record, 'NAME'),
                     f"ID: {current_primary_id} ({current_primary_name})",
                     f"ID: {new_primary_id} ({new_primary_name})"
                 ]
@@ -372,9 +382,15 @@ def render_enrichment_page(session, selected_hco_df):
         unsafe_allow_html=True
     )
 
+    # Helper to get current_record value with fallback
+    def get_current_val(key):
+        val = current_record.get(key)
+        if val is None or val == '':
+            val = current_record.get(f"HCO_{key}")
+        return val if val is not None else ''
     
     #provider_info_change
-    provider_info_title = f"Address information of : {current_record.get('Name', 'N/A')}"
+    provider_info_title = f"Address information of : {current_record.get('Name', '') or current_record.get('HCO_NAME', 'N/A')}"
     
     with st.expander(provider_info_title, expanded=st.session_state.demographic_expander_state): 
         
@@ -386,7 +402,7 @@ def render_enrichment_page(session, selected_hco_df):
         provider_mapping = { "Name": "Name", "Address Line 1": "Address Line1", "Address Line 2": "Address Line2", "City": "City", "State": "State", "ZIP Code": "ZIP" }
 
         for field_label, col_name in provider_mapping.items():
-            current_val = current_record.get(col_name, "")
+            current_val = get_current_val(col_name) or ""
             proposed_val = proposed_hcp_data_record.get(col_name, "")
             score = proposed_hcp_data_record.get(f"{col_name}_Score", 0)
             
@@ -449,7 +465,7 @@ def render_enrichment_page(session, selected_hco_df):
 
     st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
     
-    hco_affiliation_title = f"HCO Affiliation information of : {current_record.get('Name', 'N/A')}"
+    hco_affiliation_title = f"HCO Affiliation information of : {current_record.get('Name', '') or current_record.get('HCO_NAME', 'N/A')}"
     
     with st.expander(hco_affiliation_title, expanded=False):
         
@@ -461,7 +477,7 @@ def render_enrichment_page(session, selected_hco_df):
         primary_id_val = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
         true_primary_hco_id = int(primary_id_val) if pd.notna(primary_id_val) else None
         
-        hcp_npi = current_record.get("NPI")
+        hcp_npi = current_record.get("NPI") or current_record.get("HCO_NPI")
         db_affiliations_df = pd.DataFrame()
         if hcp_npi:
             query = f"SELECT * FROM HCP_HCO_AFFILIATION WHERE HCP_NPI = '{hcp_npi}'"
