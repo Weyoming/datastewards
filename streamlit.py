@@ -667,8 +667,11 @@ def render_main_page(session):
                         for col_header, header_name in zip(cols, headers):
                             col_header.markdown(f"**{header_name}**")
 
+
                         # Render table rows
                         for index, row in df.iterrows():
+                            st.write(row)
+                            st.write(row.get("ID"))
                             row_id = row.get("ID")
                             if row_id is None or pd.isna(row_id):
                                 row_id = index  # Fallback to index if ID is NULL
@@ -789,7 +792,7 @@ def render_main_page(session):
                         with st.container(border=True):
                             hco_col1, hco_col2 = st.columns(2)
                             primary_hco_id = selected_record.get("OUTLET_ID")
-        
+                            
                             hco_col1.markdown(f'<div class="detail-key">Outlet ID:</div><div class="detail-value">{get_safe_value(selected_record, "OUTLET_ID")}</div>', unsafe_allow_html=True)
                             
                             hco_id_val = str(int(primary_hco_id)) if pd.notna(primary_hco_id) and primary_hco_id is not None else "N/A"
@@ -978,5 +981,3 @@ elif st.session_state.current_view == "enrichment_page":
         if st.button("Back to Main Page"):
             st.session_state.current_view = "main"
             st.rerun()
-
-
