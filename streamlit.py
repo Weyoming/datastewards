@@ -211,21 +211,21 @@ def render_enrichment_page(session, selected_hcp_df):
 
     # --- Custom CSS for the "Web Report" Look ---
     st.markdown(
-        """
-    <style>
-        div[data-testid="stHorizontalBlock"]:has(div.cell-content),
-        div[data-testid="stHorizontalBlock"]:has(div.hco-cell) { border-bottom: 1px solid #e6e6e6; }
-        div[data-testid="stHorizontalBlock"]:has(div.cell-content):hover,
-        div[data-testid="stHorizontalBlock"]:has(div.hco-cell):hover { background-color: #f8f9fa; }
-        .cell-content, .hco-cell { padding: 0.3rem 0.5rem; font-size: 14px; display: flex; align-items: center; height: 48px; }
-        .report-header, .hco-header { font-weight: bold; color: #4f4f4f; padding: 0.5rem; }
-        .hco-header { border-bottom: 2px solid #ccc; }
-        .report-proposed-column { border-left: 2px solid #D3D3D3; padding-left: 1.5rem; }
-        .checkbox-container { width: 100%; text-align: center; }
-        .checkbox-container div[data-testid="stCheckbox"] { padding-top: 12px; }
-        div[data-testid="stExpander"] button { margin-top: -1rem; }
-        .hco-cell div[data-testid="stButton"] button { padding: 0.2rem 0.5rem; font-size: 12px; height: 30px; }
-    </style>
+    """
+        <style>
+            div[data-testid="stHorizontalBlock"]:has(div.cell-content),
+            div[data-testid="stHorizontalBlock"]:has(div.hco-cell) { border-bottom: 1px solid #e6e6e6; }
+            div[data-testid="stHorizontalBlock"]:has(div.cell-content):hover,
+            div[data-testid="stHorizontalBlock"]:has(div.hco-cell):hover { background-color: #f8f9fa; }
+            .cell-content, .hco-cell { padding: 0.3rem 0.5rem; font-size: 14px; display: flex; align-items: center; height: 48px; }
+            .report-header, .hco-header { font-weight: bold; color: #4f4f4f; padding: 0.5rem; }
+            .hco-header { border-bottom: 2px solid #ccc; }
+            .report-proposed-column { border-left: 2px solid #D3D3D3; padding-left: 1.5rem; }
+            .checkbox-container { width: 100%; text-align: center; }
+            .checkbox-container div[data-testid="stCheckbox"] { padding-top: 12px; }
+            div[data-testid="stExpander"] button { margin-top: -1rem; }
+            .hco-cell div[data-testid="stButton"] button { padding: 0.2rem 0.5rem; font-size: 12px; height: 30px; }
+        </style>
     """,
         unsafe_allow_html=True,
     )
@@ -501,7 +501,7 @@ def render_enrichment_page(session, selected_hcp_df):
                     st.session_state.show_primary_confirm_dialog = False
                     st.rerun()
         return
-#end of Placeholder for a potential dialog to display over the main content
+    #end of Placeholder for a potential dialog to display over the main content
 
     with st.spinner("🚀 Contacting AI Assistant for Data Enrichment..."):
         # proposed_df = get_enriched_data_from_llm(session, selected_hcp_df)
@@ -522,8 +522,7 @@ def render_enrichment_page(session, selected_hcp_df):
     proposed_hcp_data_record = proposed_hcp_data_df.iloc[0]
 
 
-#session state for proposed record
-
+    #session state for proposed record
     st.session_state.proposed_hcp_data_record = proposed_hcp_data_record
     
     if "demographic_expander_state" not in st.session_state:
@@ -535,7 +534,7 @@ def render_enrichment_page(session, selected_hcp_df):
         if st.session_state.get(f"approve_{selected_id}_{col_name}", False):
             st.session_state.demographic_expander_state = True
             break
-#end of session state for proposed record
+    #end of session state for proposed record
 
     #st.header(f"Comparing for ID: {selected_id} | {current_record.get('Name', '')} | NPI: {current_record.get('NPI', 'N/A')}")
     st.markdown(
@@ -544,7 +543,7 @@ def render_enrichment_page(session, selected_hcp_df):
     )
 
     
-#provider_info_change
+    #provider_info_change
     provider_info_title = f"Demographic information of : {current_record.get('Name', 'N/A')} (NPI: {current_record.get('NPI', 'N/A')})"
     
     with st.expander(provider_info_title, expanded=st.session_state.demographic_expander_state): 
@@ -671,14 +670,14 @@ def render_enrichment_page(session, selected_hcp_df):
             # Use a unique key for AI-generated entries (use index if no HCO ID)
             key = hco_id if hco_id and hco_id not in all_affiliations else f"ai_generated_{idx}"
             all_affiliations[key] = hco
-
+        
         if not all_affiliations:
             st.info("No HCO affiliations were found.")
         else:
             sorted_affiliations = sorted(
                 all_affiliations.items(),
                 key=lambda item: (
-                    pd.notna(item[0]) and
+                    hco_id != "N/A" and
                     true_primary_hco_id is not None and
                     int(item[0]) == true_primary_hco_id
                 ),
@@ -688,7 +687,7 @@ def render_enrichment_page(session, selected_hcp_df):
             for hco_id, hco_data in sorted_affiliations:
                 row_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5, 1.5])
                 
-                is_primary = pd.notna(hco_id) and true_primary_hco_id is not None and int(hco_id) == true_primary_hco_id
+                is_primary = hco_id != "N/A" and true_primary_hco_id is not None and int(hco_id) == true_primary_hco_id
                 
                 with row_cols[0]:
                     if is_primary:
@@ -720,9 +719,7 @@ def render_enrichment_page(session, selected_hcp_df):
                 row_cols[7].write(hco_data.get("HCO STATE", ""))
                 row_cols[8].write(hco_data.get("HCO ZIP", ""))
 
-#----------end of provider_info_change
-
-
+    #----------end of provider_info_change
 
 # --- MAIN DATA STEWARD APP PAGE FUNCTION ---
 def render_main_page(session):
@@ -880,8 +877,7 @@ def render_main_page(session):
                 value = record.get(key)
                 return str(value) if pd.notna(value) and value is not None else 'N/A'
             
-
- # 2. Selected Record Details (Only appears when selected_hcp_id is set)
+            # 2. Selected Record Details (Only appears when selected_hcp_id is set)
             if st.session_state.get("selected_hcp_id") and st.session_state.get("results_df") is not None:
                 
                 selected_record_df = st.session_state.results_df[
@@ -1062,9 +1058,9 @@ def get_consolidated_data_for_hcp(hcp_data, model_name="sonar", use_pro_search=F
 
     **Part 2 - Practice/Hospital Affiliation:**
     Search NPI Registry, hospital websites, Healthgrades, Vitals, WebMD, or Doximity for where this doctor practices.
-    - NPI: The organization's NPI number (10 digits) - search npiregistry.cms.hhs.gov
+    - NPI: The HCP (Health Care Provider)'s NPI number (10 digits) (Use the provided {hcp_npi} if provided or else fetch it from - search npiregistry.cms.hhs.gov or other sources)
     - HCO_ID: Use the organization NPI as ID, or "N/A" if not found
-    - HCO_Name: Name of the hospital, medical group, or clinic where they practice
+    - HCO_Name: Name of the hospital, medical group, or clinic where they practice (NOTE: NOT the name of the HCP)
     - HCO_Address1: Street address of the practice location
     - HCO_City: City in ALL CAPS
     - HCO_State: 2-letter state code
