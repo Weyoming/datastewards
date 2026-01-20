@@ -722,10 +722,12 @@ def render_main_page(session):
                         st.session_state.results_df = df
                         st.write("Please select a record from the table to proceed:")
                         # Define column sizes tuple (must match number of headers)
+                        # col_sizes = (0.8, 0.8, 1.2, 1, 2, 1, 0.5)
                         col_sizes = (0.8, 2, 2, 1.5, 1)
 
                         # Define column heading names
                         cols = st.columns(col_sizes)
+                        # headers = ["Select", "ID", "Name", "NPI", "Address", "City", "State"]
                         headers = ["Select", "Name", "Address", "City", "State"]
                         
                         # Render table headers
@@ -734,6 +736,9 @@ def render_main_page(session):
 
                         # Render table rows
                         for index, row in df.iterrows():
+                            # row_id = row.get("ID")
+                            # if row_id is None:
+                            #     continue
                             row_id = index  # Use index as row identifier since there's no ID column
                             is_selected = row_id == st.session_state.get("selected_hco_id")
                             row_cols = st.columns(col_sizes)
@@ -744,6 +749,12 @@ def render_main_page(session):
                                 if row_cols[0].button("", key=f"select_{row_id}"):
                                     st.session_state.selected_hco_id = row_id
                                     st.rerun()
+                            # row_cols[1].write(row_id)
+                            # row_cols[2].write(row.get("NAME", ""))
+                            # row_cols[3].write(row.get("NPI", "N/A"))
+                            # row_cols[4].write(row.get("ADDRESS1", "N/A"))
+                            # row_cols[5].write(row.get("CITY", "N/A"))
+                            # row_cols[6].write(row.get("STATE", "N/A"))
                             row_cols[1].write(row.get("NAME", ""))
                             row_cols[2].write(row.get("ADDRESS1", "N/A"))
                             row_cols[3].write(row.get("CITY", "N/A"))
