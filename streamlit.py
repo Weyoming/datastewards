@@ -372,7 +372,7 @@ def render_enrichment_page(session, selected_hco_df):
 
     
     #provider_info_change
-    provider_info_title = f"Demographic information of : {current_record.get('Name', 'N/A')} (NPI: {current_record.get('NPI', 'N/A')})"
+    provider_info_title = f"Demographic information of : {current_record.get('Name', 'N/A')}"
     
     with st.expander(provider_info_title, expanded=st.session_state.demographic_expander_state): 
         
@@ -447,7 +447,7 @@ def render_enrichment_page(session, selected_hco_df):
 
     st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
     
-    hco_affiliation_title = f"HCO Affiliation information of : {current_record.get('Name', 'N/A')} (NPI: {current_record.get('NPI', 'N/A')})"
+    hco_affiliation_title = f"HCO Affiliation information of : {current_record.get('Name', 'N/A')}"
     
     with st.expander(hco_affiliation_title, expanded=False):
         
