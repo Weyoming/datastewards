@@ -652,6 +652,7 @@ def render_main_page(session):
             if item["type"] == "sql":
                 sql_item_found = True
                 with st.spinner("Running SQL..."):
+                    st.write(item["statement"])
                     df = session.sql(item["statement"]).to_pandas()
                     if not df.empty:
                         st.session_state.results_df = df
