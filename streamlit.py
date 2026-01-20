@@ -727,7 +727,8 @@ def render_main_page(session):
 
                         # Define column heading names
                         cols = st.columns(col_sizes)
-                        headers = ["Select", "ID", "Name", "NPI", "Address", "City", "State"]
+                        # headers = ["Select", "ID", "Name", "NPI", "Address", "City", "State"]
+                        headers = ["Select", "Name", "Address", "City", "State"]
                         
                         # Render table headers
                         for col_header, header_name in zip(cols, headers):
@@ -750,10 +751,9 @@ def render_main_page(session):
 
                             row_cols[1].write(row_id)
                             row_cols[2].write(row.get("NAME", ""))
-                            row_cols[3].write(row.get("NPI", "N/A"))
-                            row_cols[4].write(row.get("ADDRESS1", "N/A"))
-                            row_cols[5].write(row.get("CITY", "N/A"))
-                            row_cols[6].write(row.get("STATE", "N/A"))
+                            row_cols[3].write(row.get("ADDRESS1", "N/A"))
+                            row_cols[4].write(row.get("CITY", "N/A"))
+                            row_cols[5].write(row.get("STATE", "N/A"))
                     else:
                         st.info("We couldn't find any records matching your search.", icon="ℹ️")
         if not sql_item_found:
