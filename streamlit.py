@@ -650,6 +650,7 @@ def render_main_page(session):
             if item["type"] == "sql":
                 sql_item_found = True
                 with st.spinner("Running SQL..."):
+                    st.write(item["statement"])
                     df = session.sql(item["statement"]).to_pandas()
                     if not df.empty:
                         st.session_state.results_df = df
@@ -670,8 +671,6 @@ def render_main_page(session):
 
                         # Render table rows
                         for index, row in df.iterrows():
-                            st.write(row)
-                            st.write(row.get("ID"))
                             row_id = row.get("ID")
                             if row_id is None or pd.isna(row_id):
                                 row_id = index  # Fallback to index if ID is NULL
