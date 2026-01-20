@@ -803,7 +803,7 @@ def render_main_page(session):
                     
                     # --- Left Detail Column: Current Demographic Details ---
                     with details_col_left:
-                        st.subheader("Current Demographic Details")
+                        st.subheader("Current HCO Details")
                         
                         # This border container holds the custom 2x2 layout
                         with st.container(border=True):
@@ -834,7 +834,7 @@ def render_main_page(session):
                                 value = get_safe_value(selected_record, key)
                                 left_col_address.markdown(
                                     f'<div class="detail-key">{label}:</div>'
-                                    f'<div class="detail-value">{value}</div>',
+                                    f'<div class="detail-value">{value if value is not None else "N/A"}</div>',
                                     unsafe_allow_html=True
                                 )
 
@@ -843,7 +843,7 @@ def render_main_page(session):
                                 value = get_safe_value(selected_record, key)
                                 right_col_address.markdown(
                                     f'<div class="detail-key">{label}:</div>'
-                                    f'<div class="detail-value">{value}</div>',
+                                    f'<div class="detail-value">{value if value is not None else "N/A"}</div>',
                                     unsafe_allow_html=True
                                 )
 
