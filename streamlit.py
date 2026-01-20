@@ -834,16 +834,16 @@ def render_main_page(session):
                             ]
 
                             # Create two internal columns for the key-value pairs
-                            col_identity, col_address = st.columns(2)
+                            col_identity, col_address = st.columns(1)
 
                             # Render Identity Fields (Left Column)
-                            for label, key in identity_fields:
-                                value = get_safe_value(selected_record, key)
-                                col_identity.markdown(
-                                    f'<div class="detail-key">{label}:</div>'
-                                    f'<div class="detail-value">{value}</div>',
-                                    unsafe_allow_html=True
-                                )
+                            # for label, key in identity_fields:
+                            #     value = get_safe_value(selected_record, key)
+                            #     col_identity.markdown(
+                            #         f'<div class="detail-key">{label}:</div>'
+                            #         f'<div class="detail-value">{value}</div>',
+                            #         unsafe_allow_html=True
+                            #     )
 
                             # Render Address Fields (Right Column)
                             for label, key in address_fields:
