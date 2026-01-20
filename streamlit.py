@@ -763,9 +763,12 @@ def render_main_page(session):
                 st.subheader("Search Results")
                 display_results_table(content=assistant_messages[-1]["content"])
 
-            # Helper to safely get and format value
+            # Helper to safely get and format value (handles both column naming conventions)
             def get_safe_value(record, key):
+                # Try original key first, then with HCO_ prefix
                 value = record.get(key)
+                if value is None or (isinstance(value, float) and pd.isna(value)):
+                    value = record.get(f"HCO_{key}")
                 return str(value) if pd.notna(value) and value is not None else 'N/A'
             
 
@@ -773,8 +776,10 @@ def render_main_page(session):
             if st.session_state.get("selected_hco_id") and st.session_state.get("results_df") is not None:
                 # Handle both ID and HCO_ID column names
                 id_col = "ID" if "ID" in st.session_state.results_df.columns else "HCO_ID"
+                # Convert both to string for comparison to avoid type mismatch
+                selected_id_str = str(st.session_state.selected_hco_id)
                 selected_record_df = st.session_state.results_df[
-                    st.session_state.results_df[id_col] == st.session_state.selected_hco_id
+                    st.session_state.results_df[id_col].astype(str) == selected_id_str
                 ]
 
                 
@@ -793,8 +798,8 @@ def render_main_page(session):
                         with st.container(border=True):
                             
                             # ID and Name in the required structure (single line)
-                            hcp_id = get_safe_value(selected_record, 'ID')
-                            hcp_name = get_safe_value(selected_record, 'NAME')
+                            hcp_id = get_safe_value(selected_record, 'ID') if 'ID' in selected_record.index else get_safe_value(selected_record, 'HCO_ID')
+                            hcp_name = get_safe_value(selected_record, 'NAME') if 'NAME' in selected_record.index else get_safe_value(selected_record, 'HCO_NAME')
                             st.markdown(f'**ID:** {hcp_id} - {hcp_name}', unsafe_allow_html=True)
                             
                             st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
