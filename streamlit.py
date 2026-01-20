@@ -1020,8 +1020,11 @@ elif st.session_state.current_view == "enrichment_page":
         show_popup_without_button(popup_placeholder, st.session_state.popup_message_info['type'], st.session_state.popup_message_info) 
 
     if st.session_state.selected_hco_id and st.session_state.results_df is not None:
+        # Handle both ID and HCO_ID column names
+        id_col = "ID" if "ID" in st.session_state.results_df.columns else "HCO_ID"
+        selected_id_str = str(st.session_state.selected_hco_id)
         selected_record_df = st.session_state.results_df[
-            st.session_state.results_df["ID"] == st.session_state.selected_hco_id
+            st.session_state.results_df[id_col].astype(str) == selected_id_str
         ]
 
         # This function call now needs to be wrapped in an `if` to prevent re-rendering issues
