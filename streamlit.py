@@ -651,7 +651,6 @@ def render_main_page(session):
                 sql_item_found = True
                 with st.spinner("Running SQL..."):
                     df = session.sql(item["statement"]).to_pandas()
-                    st.write("Columns:", list(df.columns))  # Debug: show actual column names
                     if not df.empty:
                         st.session_state.results_df = df
                         st.write("Please select a record from the table to proceed:")
