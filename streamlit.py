@@ -363,7 +363,7 @@ def render_enrichment_page(session, selected_hco_df):
 
     #st.header(f"Comparing for ID: {selected_id} | {current_record.get('Name', '')} | NPI: {current_record.get('NPI', 'N/A')}")
     st.markdown(
-        f"<h5>Comparing for ID: {selected_id} | {current_record.get('Name', '')} | NPI: {current_record.get('NPI', 'N/A')}</h5>", 
+        f"<h5>Comparing for ID: {selected_id} | {current_record.get('Name', '')}</h5>", 
         unsafe_allow_html=True
     )
 
