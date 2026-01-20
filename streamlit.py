@@ -859,7 +859,6 @@ class HCOData(BaseModel):
     Country: list[str]
 
 class HCOAffiliationData(BaseModel):
-    NPI: list[str]
     HCO_ID: list[str]
     HCO_Name: list[str]
     HCO_Address1: list[str]
@@ -903,12 +902,10 @@ def get_consolidated_data_for_hco(hco_data, model_name="sonar", use_pro_search=F
     - State: 2-letter US state code (e.g., TX, CA, NY)
     - ZIP: 5-digit zipcode
 
-    **Part 2 - Affiliated Healthcare Providers:**
-    Search NPI Registry, hospital websites, Healthgrades, Vitals, WebMD, or Doximity for healthcare providers affiliated with this organization.
-    - NPI: The HCP (Health Care Provider)'s NPI number (10 digits) - search npiregistry.cms.hhs.gov or other sources
-    - HCO_ID: The organization's NPI or ID, or "N/A" if not found
-    - HCO_Name: Name of the healthcare organization
-    - HCO_Address1: Street address of the organization
+    **Part 2 - Affiliated Health Care Organization Details:**
+    - HCO_ID: The NPI or ID of the organization to which the HCO {hco_name} is affiliated, or "N/A" if not found
+    - HCO_Name: Name of the healthcare organization to which the HCO {hco_name} is affiliated
+    - HCO_Address1: Street address of the organization to which the HCO {hco_name} is affiliated
     - HCO_City: City in ALL CAPS
     - HCO_State: 2-letter state code
     - HCO_ZIP: 5-digit zipcode
