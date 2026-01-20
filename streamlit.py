@@ -825,32 +825,32 @@ def render_main_page(session):
                             #     ("Suffix", "SUFFIX"),
                             #     ("Degree", "DEGREE"),
                             # ]
-                            address_fields = [
+                            left_fields = [                                
                                 ("Address Line 1", "ADDRESS1"),
                                 ("Address Line 2", "ADDRESS2"),
-                                ("City", "CITY"),
+                                ("City", "CITY"),]
+                            right_fields = [
                                 ("State", "STATE"),
                                 ("ZIP", "ZIP"),
                                 ("Country", "COUNTRY")
                             ]
 
                             # Create two internal columns for the key-value pairs
-                            # col_identity, col_address = st.columns(1)
-                            col_address = st.columns(1)
+                            left_col_address, right_col_address = st.columns(2)
 
                             # Render Identity Fields (Left Column)
-                            # for label, key in identity_fields:
-                            #     value = get_safe_value(selected_record, key)
-                            #     col_identity.markdown(
-                            #         f'<div class="detail-key">{label}:</div>'
-                            #         f'<div class="detail-value">{value}</div>',
-                            #         unsafe_allow_html=True
-                            #     )
+                            for label, key in left_fields:
+                                value = get_safe_value(selected_record, key)
+                                left_col_address.markdown(
+                                    f'<div class="detail-key">{label}:</div>'
+                                    f'<div class="detail-value">{value}</div>',
+                                    unsafe_allow_html=True
+                                )
 
                             # Render Address Fields
-                            for label, key in address_fields:
+                            for label, key in right_fields:
                                 value = get_safe_value(selected_record, key)
-                                st.markdown(
+                                right_col_address.markdown(
                                     f'<div class="detail-key">{label}:</div>'
                                     f'<div class="detail-value">{value}</div>',
                                     unsafe_allow_html=True
