@@ -652,6 +652,7 @@ def render_main_page(session):
                 with st.spinner("Running SQL..."):
                     st.write(item["statement"])
                     df = session.sql(item["statement"]).to_pandas()
+                    st.write("Columns:", list(df.columns))  # Debug: show actual column names
                     if not df.empty:
                         st.session_state.results_df = df
                         st.write("Please select a record from the table to proceed:")
@@ -671,7 +672,8 @@ def render_main_page(session):
 
                         # Render table rows
                         for index, row in df.iterrows():
-                            row_id = row.get("ID")
+                            # Check for ID column with various possible names from Cortex
+                            row_id = row.get("ID") if "ID" in row.index else row.get("HCO_ID")
                             if row_id is None or pd.isna(row_id):
                                 row_id = index  # Fallback to index if ID is NULL
                             is_selected = row_id == st.session_state.get("selected_hco_id")
@@ -684,10 +686,10 @@ def render_main_page(session):
                                     st.session_state.selected_hco_id = row_id
                                     st.rerun()
                             row_cols[1].write(row_id)
-                            row_cols[2].write(row.get("NAME", ""))
-                            row_cols[3].write(row.get("ADDRESS1", "N/A"))
-                            row_cols[4].write(row.get("CITY", "N/A"))
-                            row_cols[5].write(row.get("STATE", "N/A"))
+                            row_cols[2].write(row.get("NAME") or row.get("HCO_NAME", ""))
+                            row_cols[3].write(row.get("ADDRESS1") or row.get("HCO_ADDRESS1", "N/A"))
+                            row_cols[4].write(row.get("CITY") or row.get("HCO_CITY", "N/A"))
+                            row_cols[5].write(row.get("STATE") or row.get("HCO_STATE", "N/A"))
                     else:
                         st.info("We couldn't find any records matching your search.", icon="ℹ️")
         if not sql_item_found:
