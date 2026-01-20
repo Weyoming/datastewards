@@ -790,14 +790,15 @@ def render_main_page(session):
                         with st.container(border=True):
                             hco_col1, hco_col2 = st.columns(2)
                             st.write(selected_record)
-                            primary_hco_id = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
+                            primary_hco_id = selected_record.get("OUTLET_ID")
                             
-                            hco_col1.markdown(f'<div class="detail-key">HCP ID:</div><div class="detail-value">{get_safe_value(selected_record, "ID")}</div>', unsafe_allow_html=True)
+                            hco_col1.markdown(f'<div class="detail-key">Outlet ID:</div><div class="detail-value">{get_safe_value(selected_record, "ID")}</div>', unsafe_allow_html=True)
                             
                             hco_id_val = str(int(primary_hco_id)) if pd.notna(primary_hco_id) and primary_hco_id is not None else "N/A"
-                            hco_col2.markdown(f'<div class="detail-key">Primary HCO NPI:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
                             
-                            hco_col1.markdown(f'<div class="detail-key">HCP Name:</div><div class="detail-value">{get_safe_value(selected_record, "NAME")}</div>', unsafe_allow_html=True)
+                            hco_col2.markdown(f'<div class="detail-key">Outlet HCO NPI:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
+                            
+                            hco_col1.markdown(f'<div class="detail-key">Outlet Name:</div><div class="detail-value">{get_safe_value(selected_record, "OUTLET_NAME")}</div>', unsafe_allow_html=True)
                             # Removed the line for "Primary HCO Name" as requested.
                             
                             
