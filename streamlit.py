@@ -346,6 +346,7 @@ def render_enrichment_page(session, selected_hco_df):
     with st.spinner("🚀 Contacting AI Assistant for Data Enrichment..."):
         # proposed_df = get_enriched_data_from_api(session, selected_hco_df)
         api_response = get_enriched_data_from_api(session, selected_hco_df)
+        st.write("API Response:", api_response)  # Debug: show API response
         proposed_hcp_data_df = pd.DataFrame(api_response['hco_data'])
         proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hco_affiliation_data'])
 
@@ -382,12 +383,10 @@ def render_enrichment_page(session, selected_hco_df):
         unsafe_allow_html=True
     )
 
-    # Helper to get current_record value with fallback
+    # Helper to get current_record value (current_df uses keys like 'Name', 'Address Line1')
     def get_current_val(key):
         val = current_record.get(key)
-        if val is None or val == '':
-            val = current_record.get(f"HCO_{key}")
-        return val if val is not None else ''
+        return val if val is not None and val != '' else ''
     
     #provider_info_change
     provider_info_title = f"Address information of : {current_record.get('Name', '') or current_record.get('HCO_NAME', 'N/A')}"
@@ -947,12 +946,22 @@ def get_consolidated_data_for_hco(hco_data, model_name="sonar", use_pro_search=F
     # Extract key info for better search - handle both dict and pandas Series
     if hasattr(hco_data, 'to_dict'):
         hco_data = hco_data.to_dict()
-    hco_name = hco_data.get('NAME', '') if isinstance(hco_data, dict) else str(hco_data)
-    hco_address1 = hco_data.get('ADDRESS1', '') if isinstance(hco_data, dict) else str(hco_data)
-    hco_address2 = hco_data.get('ADDRESS2', '') if isinstance(hco_data, dict) else str(hco_data)
-    hco_city = hco_data.get('CITY', '') if isinstance(hco_data, dict) else str(hco_data)
-    hco_state = hco_data.get('STATE', '') if isinstance(hco_data, dict) else str(hco_data)
-    hco_zip = hco_data.get('ZIP', '') if isinstance(hco_data, dict) else str(hco_data)
+    
+    # Helper to get value with fallback to HCO_ prefixed key
+    def get_hco_val(key):
+        if isinstance(hco_data, dict):
+            val = hco_data.get(key, '')
+            if not val:
+                val = hco_data.get(f'HCO_{key}', '')
+            return val
+        return str(hco_data)
+    
+    hco_name = get_hco_val('NAME')
+    hco_address1 = get_hco_val('ADDRESS1')
+    hco_address2 = get_hco_val('ADDRESS2')
+    hco_city = get_hco_val('CITY')
+    hco_state = get_hco_val('STATE')
+    hco_zip = get_hco_val('ZIP')
     
     user_query = f"""
     Search the web for information about this US healthcare organization:
