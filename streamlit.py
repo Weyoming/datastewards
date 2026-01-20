@@ -710,7 +710,6 @@ def render_main_page(session):
                 with st.spinner("Running SQL..."):
                     original_sql = item["statement"]
                     sql_to_run = ensure_join_in_sql(original_sql)
-                    st.write(sql_to_run)
                     df = session.sql(sql_to_run).to_pandas()
                     if not df.empty:
                         st.session_state.results_df = df
