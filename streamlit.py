@@ -903,15 +903,21 @@ def get_consolidated_data_for_hco(hco_data, model_name="sonar", use_pro_search=F
     - State: 2-letter US state code (e.g., TX, CA, NY)
     - ZIP: 5-digit zipcode
 
-    **Part 2 - Affiliated Health Care Organization Details:**
-    - HCO_ID: The NPI or ID of the organization to which the HCO {hco_name} is affiliated, or "N/A" if not found
-    - HCO_Name: Name of the healthcare organization to which the HCO {hco_name} is affiliated
-    - HCO_Address1: Street address of the organization to which the HCO {hco_name} is affiliated
+    **Part 2 - Parent/Owning Healthcare Organization Details:**
+    Search for the PARENT organization, corporate owner, or health system that owns or operates "{hco_name}".
+    Look for terms like "owned by", "operated by", "part of", "subsidiary of", "member of", "division of", or "affiliated with [health system name]".
+    
+    - HCO_ID: The NPI number of the parent organization (10 digits), or "N/A" if not found
+    - HCO_Name: Name of the parent healthcare system, hospital network, or corporate owner (e.g., "HCA Healthcare", "CommonSpirit Health", "Ascension")
+    - HCO_Address1: Headquarters or main address of the parent organization
     - HCO_City: City in ALL CAPS
     - HCO_State: 2-letter state code
     - HCO_ZIP: 5-digit zipcode
 
     **Search Tips:**
+    - Search "{hco_name} owned by" or "{hco_name} parent company" or "{hco_name} health system"
+    - Check the organization's website "About Us" page for parent company info
+    - If the organization IS the parent (no parent exists), return "N/A" for all HCO fields
     - Return actual found data, not "N/A" unless truly not findable
     """
 
