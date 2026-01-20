@@ -12,6 +12,8 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from perplexity import Perplexity
 
+# Set Perplexity API key from Streamlit secrets
+os.environ["PERPLEXITY_API_KEY"] = st.secrets["perplexity"]["api_key"]
 
 # --- SNOWFLAKE CONNECTION FOR STREAMLIT COMMUNITY CLOUD ---
 @st.cache_resource
