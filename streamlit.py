@@ -771,9 +771,10 @@ def render_main_page(session):
 
             # 2. Selected Record Details (Only appears when selected_hco_id is set)
             if st.session_state.get("selected_hco_id") and st.session_state.get("results_df") is not None:
-                
+                # Handle both ID and HCO_ID column names
+                id_col = "ID" if "ID" in st.session_state.results_df.columns else "HCO_ID"
                 selected_record_df = st.session_state.results_df[
-                    st.session_state.results_df["ID"] == st.session_state.selected_hco_id
+                    st.session_state.results_df[id_col] == st.session_state.selected_hco_id
                 ]
 
                 
