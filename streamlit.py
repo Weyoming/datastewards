@@ -372,7 +372,7 @@ def render_enrichment_page(session, selected_hco_df):
 
     
     #provider_info_change
-    provider_info_title = f"Demographic information of : {current_record.get('Name', 'N/A')}"
+    provider_info_title = f"Address information of : {current_record.get('Name', 'N/A')}"
     
     with st.expander(provider_info_title, expanded=st.session_state.demographic_expander_state): 
         
