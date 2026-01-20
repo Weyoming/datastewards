@@ -847,10 +847,10 @@ def render_main_page(session):
                             #         unsafe_allow_html=True
                             #     )
 
-                            # Render Address Fields (Right Column)
+                            # Render Address Fields
                             for label, key in address_fields:
                                 value = get_safe_value(selected_record, key)
-                                col_address.markdown(
+                                st.markdown(
                                     f'<div class="detail-key">{label}:</div>'
                                     f'<div class="detail-value">{value}</div>',
                                     unsafe_allow_html=True
