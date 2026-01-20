@@ -832,7 +832,7 @@ def render_main_page(session):
                             # Render Identity Fields (Left Column)
                             for label, key in left_fields:
                                 value = get_safe_value(selected_record, key)
-                                display_value = value if value and value.strip() and value != 'N/A' else 'N/A'
+                                display_value = value if value and value.strip() else 'N/A'
                                 left_col_address.markdown(
                                     f'<div class="detail-key">{label}:</div>'
                                     f'<div class="detail-value">{display_value}</div>',
@@ -842,7 +842,7 @@ def render_main_page(session):
                             # Render Address Fields
                             for label, key in right_fields:
                                 value = get_safe_value(selected_record, key)
-                                display_value = value if value and value.strip() and value != 'N/A' else 'N/A'
+                                display_value = value if value and value.strip() else 'N/A'
                                 right_col_address.markdown(
                                     f'<div class="detail-key">{label}:</div>'
                                     f'<div class="detail-value">{display_value}</div>',
