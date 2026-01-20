@@ -646,14 +646,58 @@ def render_main_page(session):
                 f'This is our interpretation of your question : "{interpretation_clean}"'
             )
 
+    def ensure_join_in_sql(sql: str) -> str:
+        """
+        Ensures the SQL always includes a LEFT JOIN with OUTLET_HCO_AFFILIATION.
+        If Cortex only queries HCO table, wrap it to include the join.
+        """
+        sql_upper = sql.upper()
+        # Check if join is already present
+        if "OUTLET_HCO_AFFILIATION" in sql_upper or "LEFT OUTER JOIN" in sql_upper or "LEFT JOIN" in sql_upper:
+            return sql
+        
+        # Extract WHERE clause if present
+        where_clause = ""
+        if " WHERE " in sql_upper:
+            where_idx = sql_upper.index(" WHERE ")
+            where_clause = sql[where_idx:]
+            # Remove ORDER BY from where_clause for re-adding later
+            if " ORDER BY " in where_clause.upper():
+                order_idx = where_clause.upper().index(" ORDER BY ")
+                where_clause = where_clause[:order_idx]
+        
+        # Extract the name filter from WHERE clause
+        name_filter = ""
+        if "NAME ILIKE" in sql_upper:
+            import re
+            match = re.search(r"NAME\s+ILIKE\s+'([^']+)'", sql, re.IGNORECASE)
+            if match:
+                name_filter = match.group(1)
+        
+        if name_filter:
+            # Build a new query with guaranteed join
+            new_sql = f"""
+            SELECT h.ID, h.NAME, h.ADDRESS1, h.ADDRESS2, h.CITY, h.STATE, h.ZIP, h.COUNTRY,
+                   o.OUTLET_ID, o.OUTLET_NAME, o.OUTLET_ADDRESS1, o.OUTLET_CITY, o.OUTLET_STATE, o.OUTLET_ZIP
+            FROM CORTEX_ANALYST_HCK.PUBLIC.HCO h
+            LEFT OUTER JOIN CORTEX_ANALYST_HCK.PUBLIC.OUTLET_HCO_AFFILIATION o ON h.ID = o.HCO_ID
+            WHERE h.NAME ILIKE '{name_filter}'
+            ORDER BY h.NAME
+            """
+            return new_sql.strip()
+        
+        return sql
+
     def display_results_table(content: list):
         sql_item_found = False
         for item in content:
             if item["type"] == "sql":
                 sql_item_found = True
                 with st.spinner("Running SQL..."):
-                    st.write(item["statement"])
-                    df = session.sql(item["statement"]).to_pandas()
+                    original_sql = item["statement"]
+                    sql_to_run = ensure_join_in_sql(original_sql)
+                    st.write(sql_to_run)
+                    df = session.sql(sql_to_run).to_pandas()
                     if not df.empty:
                         st.session_state.results_df = df
                         st.write("Please select a record from the table to proceed:")
