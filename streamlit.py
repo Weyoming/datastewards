@@ -944,11 +944,21 @@ def get_consolidated_data_for_hcp(hco_data, model_name="sonar", use_pro_search=F
     if hasattr(hco_data, 'to_dict'):
         hco_data = hco_data.to_dict()
     hco_name = hco_data.get('NAME', '') if isinstance(hco_data, dict) else str(hco_data)
+    hco_address1 = hco_data.get('ADDRESS1', '') if isinstance(hco_data, dict) else str(hco_data)
+    hco_address2 = hco_data.get('ADDRESS2', '') if isinstance(hco_data, dict) else str(hco_data)
+    hco_city = hco_data.get('CITY', '') if isinstance(hco_data, dict) else str(hco_data)
+    hco_state = hco_data.get('STATE', '') if isinstance(hco_data, dict) else str(hco_data)
+    hco_zip = hco_data.get('ZIP', '') if isinstance(hco_data, dict) else str(hco_data)
     
     user_query = f"""
     Search the web for information about this US healthcare organization:
     
     Name: {hco_name}
+    Address Line 1: {hco_address1}
+    Address Line 2: {hco_address2}
+    City: {hco_city}
+    State: {hco_state}
+    ZIP: {hco_zip}
 
     Find and return:
 
