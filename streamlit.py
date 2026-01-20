@@ -787,7 +787,7 @@ def render_main_page(session):
                         st.subheader("Primary HCO Affiliation Details")
                         with st.container(border=True):
                             hco_col1, hco_col2 = st.columns(2)
-                            
+                            st.write(selected_record)
                             primary_hco_id = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
                             
                             hco_col1.markdown(f'<div class="detail-key">HCP ID:</div><div class="detail-value">{get_safe_value(selected_record, "ID")}</div>', unsafe_allow_html=True)
