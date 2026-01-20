@@ -748,7 +748,7 @@ def render_main_page(session):
                                 if row_cols[0].button("", key=f"select_{row_id}"):
                                     st.session_state.selected_hco_id = row_id
                                     st.rerun()
-
+                            st.write(row)
                             row_cols[1].write(row_id)
                             row_cols[2].write(row.get("NAME", ""))
                             row_cols[3].write(row.get("ADDRESS1", "N/A"))
