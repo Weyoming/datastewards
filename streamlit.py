@@ -834,7 +834,7 @@ def render_main_page(session):
                                 value = get_safe_value(selected_record, key)
                                 left_col_address.markdown(
                                     f'<div class="detail-key">{label}:</div>'
-                                    f'<div class="detail-value">{value if value is not None else "N/A"}</div>',
+                                    f'<div class="detail-value">{value if value is not None or value.strip() != "" else "N/A"}</div>',
                                     unsafe_allow_html=True
                                 )
 
@@ -843,7 +843,7 @@ def render_main_page(session):
                                 value = get_safe_value(selected_record, key)
                                 right_col_address.markdown(
                                     f'<div class="detail-key">{label}:</div>'
-                                    f'<div class="detail-value">{value if value is not None else "N/A"}</div>',
+                                    f'<div class="detail-value">{value if value is not None or value.strip() != "" else "N/A"}</div>',
                                     unsafe_allow_html=True
                                 )
 
