@@ -33,7 +33,7 @@ def get_snowflake_session():
 
 
 # Set page to wide layout
-st.set_page_config(layout="wide", page_title="HCO Data Steward")
+st.set_page_config(layout="wide", page_title="HCP Data Steward")
 
 # --- POPUP FUNCTIONS ---
 def show_popup_without_button(popup_placeholder, message_type, record_info):
@@ -95,14 +95,118 @@ def show_popup_without_button(popup_placeholder, message_type, record_info):
     st.rerun()
 
 
+# --- NEW, SELF-CONTAINED RAG CHATBOT FUNCTION ---
+def render_rag_chatbot(session):
+    """
+    This function encapsulates all the logic and UI for the
+    'Chat with your Documents' RAG chatbot.
+    """
+    # RAG App Constants
+    NUM_CHUNKS = 3
+    CORTEX_SEARCH_DATABASE = "CORTEX_ANALYST_HCK"
+    CORTEX_SEARCH_SCHEMA = "PUBLIC"
+    CORTEX_SEARCH_SERVICE = "CC_SEARCH_SERVICE_CS"
+    COLUMNS = ["chunk", "chunk_index", "relative_path", "category"]
+    try:
+        root = Root(session)
+        svc = (
+            root.databases[CORTEX_SEARCH_DATABASE]
+            .schemas[CORTEX_SEARCH_SCHEMA]
+            .cortex_search_services[CORTEX_SEARCH_SERVICE]
+        )
+    except Exception as e:
+        st.error(f"Could not connect to the Cortex Search Service. Error: {e}")
+        st.stop()
+
+    # Helper Functions nested inside
+    def config_options():
+        st.sidebar.title("Chatbot Configuration")
+        st.sidebar.selectbox(
+            "Select your model:",
+            ("mistral-large", "llama3-70b", "llama3-8b", "snowflake-arctic"),
+            key="model_name",
+        )
+        categories = session.sql(
+            "select category from docs_chunks_table group by category"
+        ).collect()
+        cat_list = ["ALL"]
+        for cat in categories:
+            cat_list.append(cat.CATEGORY)
+        st.sidebar.selectbox("Filter by product type:", cat_list, key="category_value")
+        st.session_state.rag = st.sidebar.toggle(
+            "Use documents as context?", value=True
+        )
+
+    def get_similar_chunks_search_service(query):
+        if st.session_state.category_value == "ALL":
+            response = svc.search(query, COLUMNS, limit=NUM_CHUNKS)
+        else:
+            filter_obj = {"@eq": {"category": st.session_state.category_value}}
+            response = svc.search(query, COLUMNS, filter=filter_obj, limit=NUM_CHUNKS)
+        return response.json()
+
+    def create_prompt(myquestion):
+        if st.session_state.rag:
+            retrieved_chunks_dict = get_similar_chunks_search_service(myquestion)
+            context_for_prompt = json.dumps(retrieved_chunks_dict)
+            prompt = f"""
+                         You are an expert chat assistant that extracts information from the CONTEXT provided
+                         between <context> and </context> tags. Be concise and do not hallucinate.
+                         If you don´t have the information just say so.
+                         <context>{context_for_prompt}</context>
+                         <question>{myquestion}</question>
+                         Answer:
+                         """
+            relative_paths = set(
+                item["relative_path"]
+                for item in retrieved_chunks_dict.get("results", [])
+            )
+        else:
+            prompt = f"Question: {myquestion} Answer:"
+            relative_paths = "None"
+        return prompt, relative_paths
+
+    def complete(myquestion):
+        prompt, relative_paths = create_prompt(myquestion)
+        full_cmd = f"SELECT snowflake.cortex.complete('{st.session_state.model_name}', $${prompt}$$) as response"
+        df_response = session.sql(full_cmd).collect()
+        return df_response, relative_paths
+
+    # RAG UI
+    st.subheader("Chat with your Documents")
+    docs_available = session.sql("ls @docs").collect()
+    list_docs = [doc["name"] for doc in docs_available]
+    st.dataframe(list_docs, use_container_width=True)
+    config_options()
+    question = st.text_input(
+        "Ask a question about the documents:",
+        placeholder="e.g., What is the provider's primary specialty?",
+        label_visibility="collapsed",
+    )
+
+    if question:
+        with st.spinner("Generating answer..."):
+            response, relative_paths = complete(question)
+            res_text = response[0].RESPONSE
+            st.markdown(res_text)
+            if relative_paths != "None":
+                with st.expander("Related Documents"):
+                    for path in relative_paths:
+                        cmd2 = f"select GET_PRESIGNED_URL(@docs, '{path}', 360) as URL_LINK from directory(@docs)"
+                        df_url_link = session.sql(cmd2).to_pandas()
+                        url_link = df_url_link.iloc[0]["URL_LINK"]
+                        display_url = f"Doc: [{path}]({url_link})"
+                        st.markdown(display_url)
+
+
 # --- ENRICHMENT & COMPARISON PAGE FUNCTION ---
-def render_enrichment_page(session, selected_hco_df):
+def render_enrichment_page(session, selected_hcp_df):
     # --- BACK BUTTON LOGIC ---
     _, btn_col = st.columns([4, 1])
     with btn_col:
         if st.button("⬅️ Back to Search Results"):
             st.session_state.current_view = "main"
-            st.session_state.selected_hco_id = None
+            st.session_state.selected_hcp_id = None
             st.rerun()
 
     # --- Custom CSS for the "Web Report" Look ---
@@ -217,11 +321,11 @@ def render_enrichment_page(session, selected_hco_df):
     st.markdown("<h3>📑 Current vs. Proposed Comparison Report</h3>", unsafe_allow_html=True)
     
 
-    if selected_hco_df.empty:
+    if selected_hcp_df.empty:
         st.warning("No HCP data was provided for enrichment.")
         st.stop()
         
-    selected_record = selected_hco_df.iloc[0]
+    selected_record = selected_hcp_df.iloc[0]
     current_data_dict = { 'ID': selected_record.get('ID', ''), 'Name': selected_record.get('NAME', ''), 'NPI': selected_record.get('NPI', ''), 'Address Line1': selected_record.get('ADDRESS1', ''), 'Address Line2': selected_record.get('ADDRESS2', ''), 'City': selected_record.get('CITY', ''), 'State': selected_record.get('STATE', ''), 'ZIP': selected_record.get('ZIP', '') }
     current_df = pd.DataFrame([current_data_dict])
 
@@ -292,7 +396,7 @@ def render_enrichment_page(session, selected_hco_df):
             with col1:
                 if st.button("Yes, Update", key="confirm_yes"):
                     approved_df_cols = st.session_state.get('approved_cols', [])
-                    selected_id = st.session_state.selected_hco_id
+                    selected_id = st.session_state.selected_hcp_id
                     
                     if not approved_df_cols:
                         st.info("No fields were selected for update. Please go back and select fields.")
@@ -372,7 +476,7 @@ def render_enrichment_page(session, selected_hco_df):
             with col1:
                 if st.button("Yes, Set Primary", key="confirm_primary_yes"):
                     new_primary_id = st.session_state.primary_hco_id
-                    selected_id = st.session_state.selected_hco_id
+                    selected_id = st.session_state.selected_hcp_id
                     
                     with st.spinner("Updating primary affiliation in Snowflake..."):
                         try:
@@ -400,8 +504,8 @@ def render_enrichment_page(session, selected_hco_df):
     #end of Placeholder for a potential dialog to display over the main content
 
     with st.spinner("🚀 Contacting AI Assistant for Data Enrichment..."):
-        # proposed_df = get_enriched_data_from_llm(session, selected_hco_df)
-        api_response = get_enriched_data_from_llm(session, selected_hco_df)
+        # proposed_df = get_enriched_data_from_llm(session, selected_hcp_df)
+        api_response = get_enriched_data_from_llm(session, selected_hcp_df)
         proposed_hcp_data_df = pd.DataFrame(api_response['hcp_data'])
         proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hcp_affiliation_data'])
 
@@ -534,7 +638,8 @@ def render_enrichment_page(session, selected_hco_df):
 
         # Build ai_found_hcos from proposed_hcp_affiliation_data_df
         ai_found_hcos = []
-
+        # st.write("DEBUG - proposed_hcp_affiliation_data_df columns:", proposed_hcp_affiliation_data_df.columns.tolist())
+        # st.write("DEBUG - proposed_hcp_affiliation_data_df:", proposed_hcp_affiliation_data_df)
         if not proposed_hcp_affiliation_data_df.empty:
             for index, row in proposed_hcp_affiliation_data_df.iterrows():
                 hco_name = row.get('HCO_Name')
@@ -634,7 +739,7 @@ def render_main_page(session):
     DATABASE = "CORTEX_ANALYST_HCK"
     SCHEMA = "PUBLIC"
     STAGE = "HACKATHON"
-    FILE = "HCO_MODEL.yaml"
+    FILE = "HCK_MODEL.yaml"
 
     def send_message(prompt: str) -> dict:
         """
@@ -669,28 +774,26 @@ def render_main_page(session):
             raise Exception(f"Failed request with status {resp.status_code}: {resp.text}")
 
     def process_message(prompt: str) -> None:
-        # Clear previous messages and results
         st.session_state.messages.clear()
         st.session_state.results_df = None
-
-        st.session_state.provider_info_change = False
-
-        # Clear previous hcp_id selection
-        st.session_state.selected_hco_id = None
-
-        # Add user message to session state
+        st.session_state.selected_hcp_id = None
         st.session_state.messages.append(
             {"role": "user", "content": [{"type": "text", "text": prompt}]}
         )
         with st.spinner("Generating response..."):
             try:
                 response = send_message(prompt=prompt)
+                if not isinstance(response, dict) or "message" not in response:
+                    st.error(f"Unexpected response format from Cortex Analyst: {response}")
+                    return
+                message_content = response.get("message", {}).get("content", [])
+                if not isinstance(message_content, list):
+                    st.error(f"Unexpected message content format: {message_content}")
+                    return
                 question_item = {"type": "text", "text": prompt.strip()}
-                response["message"]["content"].insert(0, question_item)
-
-                # Add assistant message to session state
+                message_content.insert(0, question_item)
                 st.session_state.messages.append(
-                    {"role": "assistant", "content": response["message"]["content"]}
+                    {"role": "assistant", "content": message_content}
                 )
             except Exception as e:
                 st.error(f"error occured: {str(e)}")
@@ -721,38 +824,33 @@ def render_main_page(session):
                     if not df.empty:
                         st.session_state.results_df = df
                         st.write("Please select a record from the table to proceed:")
-                        # Define column sizes tuple (must match number of headers)
-                        col_sizes = (0.8, 0.8, 2, 2, 1.5, 1)
-                        # col_sizes = (0.8, 2, 2, 1.5, 1)
+                        # Define Column Sizes & Heading Names
+                        cols = st.columns((0.8, 0.8, 1.2, 1, 2, 1, 0.5))
+                        headers = ["Select", "ID", "Name", "NPI", "Address", "City", "State"]
 
-                        # Define column heading names
-                        cols = st.columns(col_sizes)
-                        headers = ["Select", "ID", "Name", "Address", "City", "State"]
-                        # headers = ["Select", "Name", "Address", "City", "State"]
-                        
-                        # Render table headers
                         for col_header, header_name in zip(cols, headers):
                             col_header.markdown(f"**{header_name}**")
 
-                        # Render table rows
                         for index, row in df.iterrows():
                             row_id = row.get("ID")
                             if row_id is None:
                                 continue
-                            is_selected = row_id == st.session_state.get("selected_hco_id")
-                            row_cols = st.columns(col_sizes)
+                            is_selected = row_id == st.session_state.get("selected_hcp_id")
+                            row_cols = st.columns((0.8, 0.8, 1.2, 1, 2, 1, 0.5))
 
                             if is_selected:
                                 row_cols[0].write("🔘")
                             else:
                                 if row_cols[0].button("", key=f"select_{row_id}"):
-                                    st.session_state.selected_hco_id = row_id
+                                    st.session_state.selected_hcp_id = row_id
                                     st.rerun()
+
                             row_cols[1].write(row_id)
                             row_cols[2].write(row.get("NAME", ""))
-                            row_cols[3].write(row.get("ADDRESS1", "N/A"))
-                            row_cols[4].write(row.get("CITY", "N/A"))
-                            row_cols[5].write(row.get("STATE", "N/A"))
+                            row_cols[3].write(row.get("NPI", "N/A"))
+                            row_cols[4].write(row.get("ADDRESS1", "N/A"))
+                            row_cols[5].write(row.get("CITY", "N/A"))
+                            row_cols[6].write(row.get("STATE", "N/A"))
                     else:
                         st.info("We couldn't find any records matching your search.", icon="ℹ️")
         if not sql_item_found:
@@ -761,7 +859,7 @@ def render_main_page(session):
     # --- MAIN INPUT LOGIC ---
     freeze_container = st.container(border=True)
     with freeze_container:
-        user_input_text = st.chat_input("Search for an HCO Account")
+        user_input_text = st.chat_input("Search for an Account")
         current_prompt = user_input_text
 
         if current_prompt and current_prompt != st.session_state.get("last_prompt"):
@@ -786,12 +884,11 @@ def render_main_page(session):
                 value = record.get(key)
                 return str(value) if pd.notna(value) and value is not None else 'N/A'
             
-
-            # 2. Selected Record Details (Only appears when selected_hco_id is set)
-            if st.session_state.get("selected_hco_id") and st.session_state.get("results_df") is not None:
+            # 2. Selected Record Details (Only appears when selected_hcp_id is set)
+            if st.session_state.get("selected_hcp_id") and st.session_state.get("results_df") is not None:
                 
                 selected_record_df = st.session_state.results_df[
-                    st.session_state.results_df["ID"] == st.session_state.selected_hco_id
+                    st.session_state.results_df["ID"] == st.session_state.selected_hcp_id
                 ]
                 
                 if not selected_record_df.empty:
@@ -812,7 +909,7 @@ def render_main_page(session):
                             hcp_id = get_safe_value(selected_record, 'ID')
                             hcp_name = get_safe_value(selected_record, 'NAME')
                             st.markdown(f'**ID:** {hcp_id} - {hcp_name}', unsafe_allow_html=True)
-                            
+                            #st.markdown("---")
                             st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
 
                             # Define the fields for the new two-column layout
@@ -899,8 +996,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "results_df" not in st.session_state:
     st.session_state.results_df = None
-if "selected_hco_id" not in st.session_state:
-    st.session_state.selected_hco_id = None
+if "selected_hcp_id" not in st.session_state:
+    st.session_state.selected_hcp_id = None
 if "current_view" not in st.session_state:
     st.session_state.current_view = "main"
 if "last_prompt" not in st.session_state:
@@ -1026,9 +1123,9 @@ elif st.session_state.current_view == "enrichment_page":
     if st.session_state.show_popup:
         show_popup_without_button(popup_placeholder, st.session_state.popup_message_info['type'], st.session_state.popup_message_info) 
 
-    if st.session_state.selected_hco_id and st.session_state.results_df is not None:
+    if st.session_state.selected_hcp_id and st.session_state.results_df is not None:
         selected_record_df = st.session_state.results_df[
-            st.session_state.results_df["ID"] == st.session_state.selected_hco_id
+            st.session_state.results_df["ID"] == st.session_state.selected_hcp_id
         ]
 
         # This function call now needs to be wrapped in an `if` to prevent re-rendering issues
