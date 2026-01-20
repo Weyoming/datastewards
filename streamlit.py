@@ -451,8 +451,8 @@ def render_enrichment_page(session, selected_hco_df):
     
     with st.expander(hco_affiliation_title, expanded=False):
         
-        hco_headers = ["Status", "SOURCE", "HCP NPI", "HCO ID", "HCO NAME", "HCO ADDRESS", "HCO CITY", "HCO STATE", "HCO ZIP"]
-        header_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5, 1.5])
+        hco_headers = ["Status", "SOURCE", "HCO ID", "HCO NAME", "HCO ADDRESS", "HCO CITY", "HCO STATE", "HCO ZIP"]
+        header_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5])
         for col_obj, header_name in zip(header_cols, hco_headers):
             col_obj.markdown(f"**{header_name}**")
         
