@@ -440,6 +440,7 @@ def render_enrichment_page(session, selected_hco_df):
                 if approved_df_cols:
                     st.session_state.show_confirm_dialog = True
                     st.session_state.approved_cols = approved_df_cols
+                    st.session_state.proposed_record = proposed_hcp_data_record.to_dict() if hasattr(proposed_hcp_data_record, 'to_dict') else proposed_hcp_data_record
                     st.rerun()
                 else:
                     st.info(f"No fields were selected for update for ID {selected_id}.")
