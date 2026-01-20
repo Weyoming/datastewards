@@ -803,7 +803,7 @@ def render_main_page(session):
                     
                     # --- Left Detail Column: Current Demographic Details ---
                     with details_col_left:
-                        st.subheader("Current HCO Details")
+                        st.subheader("Current HCO Address Details")
                         
                         # This border container holds the custom 2x2 layout
                         with st.container(border=True):
