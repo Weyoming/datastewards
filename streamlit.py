@@ -236,6 +236,7 @@ def render_enrichment_page(session, selected_hco_df):
                                 }
                                 update_assignments = {}
                                 proposed_record = st.session_state.proposed_record
+                                st.write(proposed_record)
                                 updated_columns_list = []
                                 for col_name in approved_df_cols:
                                     db_col_name = db_column_map.get(col_name)
