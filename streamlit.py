@@ -812,6 +812,7 @@ def render_main_page(session):
                             hcp_id = get_safe_value(selected_record, 'ID')
                             hcp_name = get_safe_value(selected_record, 'NAME')
                             st.markdown(f'**ID:** {hcp_id} - {hcp_name}', unsafe_allow_html=True)
+                            st.write(selected_record)
                             
                             st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
 
