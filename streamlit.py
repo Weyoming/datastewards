@@ -402,8 +402,8 @@ def render_enrichment_page(session, selected_hco_df):
     with st.spinner("🚀 Contacting AI Assistant for Data Enrichment..."):
         # proposed_df = get_enriched_data_from_llm(session, selected_hco_df)
         api_response = get_enriched_data_from_llm(session, selected_hco_df)
-        proposed_hcp_data_df = pd.DataFrame(api_response['hcp_data'])
-        proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hcp_affiliation_data'])
+        proposed_hcp_data_df = pd.DataFrame(api_response['hco_data'])
+        proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hco_affiliation_data'])
 
     try:
         if current_df.empty or proposed_hcp_data_df.empty:
@@ -960,12 +960,12 @@ def get_consolidated_data_for_hcp(hco_data, model_name="sonar", use_pro_search=F
     - State: 2-letter US state code (e.g., TX, CA, NY)
     - ZIP: 5-digit zipcode
 
-    **Part 2 - Practice/Hospital Affiliation:**
-    Search NPI Registry, hospital websites, Healthgrades, Vitals, WebMD, or Doximity for where this doctor practices.
-    - NPI: The HCP (Health Care Provider)'s NPI number (10 digits) (Use the provided {hcp_npi} if provided or else fetch it from - search npiregistry.cms.hhs.gov or other sources)
-    - HCO_ID: Use the organization NPI as ID, or "N/A" if not found
-    - HCO_Name: Name of the hospital, medical group, or clinic where they practice (NOTE: NOT the name of the HCP)
-    - HCO_Address1: Street address of the practice location
+    **Part 2 - Affiliated Healthcare Providers:**
+    Search NPI Registry, hospital websites, Healthgrades, Vitals, WebMD, or Doximity for healthcare providers affiliated with this organization.
+    - NPI: The HCP (Health Care Provider)'s NPI number (10 digits) - search npiregistry.cms.hhs.gov or other sources
+    - HCO_ID: The organization's NPI or ID, or "N/A" if not found
+    - HCO_Name: Name of the healthcare organization
+    - HCO_Address1: Street address of the organization
     - HCO_City: City in ALL CAPS
     - HCO_State: 2-letter state code
     - HCO_ZIP: 5-digit zipcode
