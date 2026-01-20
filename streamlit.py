@@ -346,7 +346,6 @@ def render_enrichment_page(session, selected_hco_df):
     with st.spinner("🚀 Contacting AI Assistant for Data Enrichment..."):
         # proposed_df = get_enriched_data_from_api(session, selected_hco_df)
         api_response = get_enriched_data_from_api(session, selected_hco_df)
-        st.write("API Response:", api_response)  # Debug: show API response
         proposed_hcp_data_df = pd.DataFrame(api_response['hco_data'])
         proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hco_affiliation_data'])
 
