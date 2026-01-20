@@ -249,6 +249,8 @@ def render_enrichment_page(session, selected_hco_df):
                                 target_table = session.table(f'"{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"')
                                 update_result = target_table.update(update_assignments, col("ID") == selected_id)
 
+                                st.write(update_result)
+
                                 if update_result.rows_updated > 0:
                                     updated_cols_str = ", ".join(updated_columns_list)
                                     custom_message = f"Record for ID: {selected_id} updated successfully. Changed columns: {updated_cols_str}."
