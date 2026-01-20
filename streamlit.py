@@ -739,7 +739,7 @@ def render_main_page(session):
     DATABASE = "CORTEX_ANALYST_HCK"
     SCHEMA = "PUBLIC"
     STAGE = "HACKATHON"
-    FILE = "HCK_MODEL.yaml"
+    FILE = "HCO_MODEL.yaml"
 
     def send_message(prompt: str) -> dict:
         """
@@ -1130,3 +1130,4 @@ elif st.session_state.current_view == "enrichment_page":
         if st.button("Back to Main Page"):
             st.session_state.current_view = "main"
             st.rerun()
+
