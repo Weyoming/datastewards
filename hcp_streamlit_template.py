@@ -152,8 +152,8 @@ DATABASE_UPDATE_CONFIG = {
     "field_to_column_map": {
         "Name": "NAME",
         "NPI": "NPI",
-        "Address Line1": "ADDRESS1",
-        "Address Line2": "ADDRESS2",
+        "Address Line 1": "ADDRESS1",
+        "Address Line 2": "ADDRESS2",
         "City": "CITY",
         "State": "STATE",
         "ZIP": "ZIP",
