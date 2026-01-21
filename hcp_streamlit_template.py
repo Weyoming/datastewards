@@ -144,6 +144,25 @@ CORTEX_CONFIG = {
     "semantic_model_file": st.secrets["snowflake"]["semantic_model_file"],
 }
 
+# Database Update Configuration
+DATABASE_UPDATE_CONFIG = {
+    "database": st.secrets["snowflake"]["database"],
+    "schema": st.secrets["snowflake"]["schema"],
+    "table": "NPI",  # Main entity table name
+    "id_column": "ID",  # Primary key column
+    # Map proposed field keys to database column names
+    "field_to_column_map": {
+        "Name": "NAME",
+        "NPI": "NPI",
+        "Specialty": "SPECIALTY",
+        "Address Line1": "ADDRESS1",
+        "Address Line2": "ADDRESS2",
+        "City": "CITY",
+        "State": "STATE",
+        "ZIP": "ZIP",
+    },
+}
+
 # ============================================================================
 # END CONFIGURATION SECTION
 # ============================================================================
@@ -545,10 +564,61 @@ def show_confirm_update_dialog():
     col_submit, col_cancel = st.columns(2)
     with col_submit:
         if st.button("✅ Yes, Update Database", type="primary", use_container_width=True):
-            st.toast("Updated successfully! (Simulation)", icon="💾")
-            st.session_state.show_confirm_dialog = False
-            st.session_state.pending_changes = []
-            st.rerun()
+            session = get_snowflake_session()
+            record_id = changes[0].get('id') if changes else None
+            
+            if not record_id:
+                st.error("No record ID found for update.")
+                return
+            
+            with st.spinner("Updating record in Snowflake..."):
+                try:
+                    # Build update assignments from config
+                    update_assignments = {}
+                    updated_columns = []
+                    
+                    for change in changes:
+                        field_key = change.get('field')
+                        db_col = DATABASE_UPDATE_CONFIG["field_to_column_map"].get(field_key)
+                        if db_col:
+                            new_value = change.get('proposed')
+                            # Handle numpy/pandas types
+                            if hasattr(new_value, 'item'):
+                                new_value = new_value.item()
+                            update_assignments[db_col] = new_value
+                            updated_columns.append(db_col)
+                    
+                    if not update_assignments:
+                        st.warning("No valid fields to update.")
+                        st.session_state.show_confirm_dialog = False
+                        st.rerun()
+                        return
+                    
+                    # Execute update using config
+                    db = DATABASE_UPDATE_CONFIG["database"]
+                    schema = DATABASE_UPDATE_CONFIG["schema"]
+                    table = DATABASE_UPDATE_CONFIG["table"]
+                    id_col = DATABASE_UPDATE_CONFIG["id_column"]
+                    
+                    target_table = session.table(f'"{db}"."{schema}"."{table}"')
+                    update_result = target_table.update(update_assignments, col(id_col) == record_id)
+                    
+                    if update_result.rows_updated > 0:
+                        updated_cols_str = ", ".join(updated_columns)
+                        st.success(f"✅ Record ID {record_id} updated successfully! Changed: {updated_cols_str}")
+                        st.session_state.show_confirm_dialog = False
+                        st.session_state.pending_changes = []
+                        time.sleep(1.5)
+                        st.rerun()
+                    else:
+                        st.warning(f"Record ID {record_id} was not found for update.")
+                        st.session_state.show_confirm_dialog = False
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"Error updating record: {e}")
+                    st.session_state.show_confirm_dialog = False
+                    st.rerun()
             
     with col_cancel:
         if st.button("❌ Cancel", use_container_width=True):
