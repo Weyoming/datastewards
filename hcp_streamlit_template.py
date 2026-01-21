@@ -66,20 +66,20 @@ MAIN_PAGE_TABLES_CONFIG = {
     ],
     "demographics": {
         "identiy_fields": [
-            {label: "Prefix", key:"PREFIX"},
-            {label: "First Name", key:"FIRST_NM"},
-            {label: "Middle Name", key:"MIDDLE_NM"},
-            {label: "Last Name", key:"LAST_NM"},
-            {label: "Suffix", key:"SUFFIX"},
-            {label: "Degree", key:"DEGREE"},
+            {"label": "Prefix", "key":"PREFIX"},
+            {"label": "First Name", "key":"FIRST_NM"},
+            {"label": "Middle Name", "key":"MIDDLE_NM"},
+            {"label": "Last Name", "key":"LAST_NM"},
+            {"label": "Suffix", "key":"SUFFIX"},
+            {"label": "Degree", "key":"DEGREE"},
         ],
         "address_fields": [
-            {label: "Address Line 1", key:"ADDRESS1"},
-            {label: "Address Line 2", key:"ADDRESS2"},
-            {label: "City", key:"CITY"},
-            {label: "State", key:"STATE"},
-            {label: "ZIP", key:"ZIP"},
-            {label: "Country", key:"COUNTRY"}
+            {"label": "Address Line 1", "key":"ADDRESS1"},
+            {"label": "Address Line 2", "key":"ADDRESS2"},
+            {"label": "City", "key":"CITY"},
+            {"label": "State", "key":"STATE"},
+            {"label": "ZIP", "key":"ZIP"},
+            {"label": "Country", "key":"COUNTRY"}
         ]
     },
     "affiliations": [{}],
