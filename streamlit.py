@@ -714,19 +714,17 @@ def render_main_page(session):
                     if not df.empty:
                         st.session_state.results_df = df
                         st.write("Please select a record from the table to proceed:")
+                        
                         # Define column sizes tuple (must match number of headers)
                         col_sizes = (0.8, 0.8, 2, 2, 1.5, 1)
-                        # col_sizes = (0.8, 2, 2, 1.5, 1)
 
                         # Define column heading names
                         cols = st.columns(col_sizes)
                         headers = ["Select", "ID", "Name", "Address", "City", "State"]
-                        # headers = ["Select", "Name", "Address", "City", "State"]
                         
                         # Render table headers
                         for col_header, header_name in zip(cols, headers):
                             col_header.markdown(f"**{header_name}**")
-
 
                         # Render table rows
                         for index, row in df.iterrows():
@@ -858,13 +856,13 @@ def render_main_page(session):
                             hco_col1, hco_col2 = st.columns(2)
                             primary_hco_id = selected_record.get("OUTLET_ID")
                             
-                            hco_col1.markdown(f'<div class="detail-key">Outlet ID:</div><div class="detail-value">{get_safe_value(selected_record, "OUTLET_ID")}</div>', unsafe_allow_html=True)
+                            hco_col1.markdown(f'<div class="detail-key">Parent ID:</div><div class="detail-value">{get_safe_value(selected_record, "OUTLET_ID")}</div>', unsafe_allow_html=True)
                             
                             hco_id_val = str(int(primary_hco_id)) if pd.notna(primary_hco_id) and primary_hco_id is not None else "N/A"
 
-                            hco_col2.markdown(f'<div class="detail-key">Outlet HCO NPI:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
+                            hco_col2.markdown(f'<div class="detail-key">Parent HCO NPI:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
                             
-                            hco_col1.markdown(f'<div class="detail-key">Outlet Name:</div><div class="detail-value">{get_safe_value(selected_record, "OUTLET_NAME")}</div>', unsafe_allow_html=True)
+                            hco_col1.markdown(f'<div class="detail-key">Parent Name:</div><div class="detail-value">{get_safe_value(selected_record, "OUTLET_NAME")}</div>', unsafe_allow_html=True)
                             # Removed the line for "Primary HCO Name" as requested.
                             
                             
