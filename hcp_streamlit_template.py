@@ -576,61 +576,68 @@ def show_confirm_update_dialog():
         if st.button("✅ Yes, Update Database", type="primary", use_container_width=True):
             session = get_snowflake_session()
             
-            with st.spinner("Updating record in Snowflake..."):
-                try:
-                    # Build update assignments from config
-                    update_assignments = {}
-                    updated_columns = []
+            # Convert record_id to int if it's numeric string
+            try:
+                record_id_typed = int(record_id) if str(record_id).isdigit() else record_id
+            except:
+                record_id_typed = record_id
+            
+            # Build update assignments from config
+            update_assignments = {}
+            updated_columns = []
+            
+            for change in changes:
+                field_key = change.get('field')
+                db_col = DATABASE_UPDATE_CONFIG["field_to_column_map"].get(field_key)
+                if db_col:
+                    new_value = change.get('proposed')
+                    # Handle numpy/pandas types
+                    if hasattr(new_value, 'item'):
+                        new_value = new_value.item()
+                    update_assignments[db_col] = new_value
+                    updated_columns.append(db_col)
+            
+            if not update_assignments:
+                st.warning("No valid fields to update.")
+                return
+            
+            # Execute update using config
+            db = DATABASE_UPDATE_CONFIG["database"]
+            schema = DATABASE_UPDATE_CONFIG["schema"]
+            table = DATABASE_UPDATE_CONFIG["table"]
+            id_col = DATABASE_UPDATE_CONFIG["id_column"]
+            
+            # Debug info
+            st.info(f"Updating table: {db}.{schema}.{table}")
+            st.info(f"WHERE {id_col} = {record_id_typed} (type: {type(record_id_typed).__name__})")
+            st.info(f"SET: {update_assignments}")
+            
+            try:
+                target_table = session.table(f'"{db}"."{schema}"."{table}"')
+                update_result = target_table.update(update_assignments, col(id_col) == record_id_typed)
+                
+                st.info(f"Rows updated: {update_result.rows_updated}")
+                
+                if update_result.rows_updated > 0:
+                    updated_cols_str = ", ".join(updated_columns)
                     
+                    # Clear checkbox selections
                     for change in changes:
-                        field_key = change.get('field')
-                        db_col = DATABASE_UPDATE_CONFIG["field_to_column_map"].get(field_key)
-                        if db_col:
-                            new_value = change.get('proposed')
-                            # Handle numpy/pandas types
-                            if hasattr(new_value, 'item'):
-                                new_value = new_value.item()
-                            update_assignments[db_col] = new_value
-                            updated_columns.append(db_col)
+                        cb_db_col = DATABASE_UPDATE_CONFIG['field_to_column_map'].get(change['field'], '')
+                        checkbox_key = f"approve_{record_id}_{cb_db_col}"
+                        if checkbox_key in st.session_state:
+                            st.session_state[checkbox_key] = False
                     
-                    if not update_assignments:
-                        st.warning("No valid fields to update.")
-                        st.session_state.show_confirm_dialog = False
-                        st.rerun()
-                        return
-                    
-                    # Execute update using config
-                    db = DATABASE_UPDATE_CONFIG["database"]
-                    schema = DATABASE_UPDATE_CONFIG["schema"]
-                    table = DATABASE_UPDATE_CONFIG["table"]
-                    id_col = DATABASE_UPDATE_CONFIG["id_column"]
-                    
-                    target_table = session.table(f'"{db}"."{schema}"."{table}"')
-                    update_result = target_table.update(update_assignments, col(id_col) == record_id)
-                    
-                    if update_result.rows_updated > 0:
-                        updated_cols_str = ", ".join(updated_columns)
-                        st.success(f"✅ Record ID {record_id} updated successfully! Changed: {updated_cols_str}")
-                        
-                        # Clear checkbox selections
-                        for change in changes:
-                            checkbox_key = f"approve_{record_id}_{DATABASE_UPDATE_CONFIG['field_to_column_map'].get(change['field'], '')}"
-                            if checkbox_key in st.session_state:
-                                st.session_state[checkbox_key] = False
-                        
-                        st.session_state.show_confirm_dialog = False
-                        st.session_state.pending_changes = []
-                        time.sleep(1.5)
-                        st.rerun()
-                    else:
-                        st.warning(f"Record ID {record_id} was not found for update.")
-                        st.session_state.show_confirm_dialog = False
-                        st.rerun()
-                        
-                except Exception as e:
-                    st.error(f"Error updating record: {e}")
                     st.session_state.show_confirm_dialog = False
+                    st.session_state.pending_changes = []
+                    st.toast(f"✅ Record {record_id} updated! Changed: {updated_cols_str}", icon="✅")
+                    time.sleep(1)
                     st.rerun()
+                else:
+                    st.error(f"No rows updated. Record ID {record_id} may not exist in table {table}.")
+                    
+            except Exception as e:
+                st.error(f"Database error: {str(e)}")
             
     with col_cancel:
         if st.button("❌ Cancel", use_container_width=True):
