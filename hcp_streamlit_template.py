@@ -151,14 +151,12 @@ def send_cortex_message(session, prompt: str) -> dict:
         "semantic_model_file": f"@{CORTEX_CONFIG['database']}.{CORTEX_CONFIG['schema']}.{CORTEX_CONFIG['stage']}/{CORTEX_CONFIG['semantic_model_file']}",
     }
 
-    st.write(headers)
-    st.write(request_body)
-    
     resp = requests.post(api_url, headers=headers, json=request_body, timeout=30)
     
     if resp.status_code < 400:
         return resp.json()
-    raise Exception(f"Failed request with status {resp.status_code}: {resp.text}")
+    else:    
+        raise Exception(f"Failed request with status {resp.status_code}: {resp.text}")
 
 def process_cortex_message(session, prompt: str):
     """Process user message and update session state."""
