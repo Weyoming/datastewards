@@ -531,6 +531,7 @@ def show_confirm_update_dialog():
 
 def render_main_page(session):
     """Render the main search page."""
+    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
     st.title(f"🏥 {APP_CONFIG['page_title']}")
     
     with st.container():
