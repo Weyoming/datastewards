@@ -644,35 +644,48 @@ def render_enrichment_page(session, selected_hco_df):
                 st.session_state.priority_rankings_cache = {}
             
             # Check if we already have cached priority rankings for this HCO
-            if cache_key in st.session_state.priority_rankings_cache:
-                priority_rankings = st.session_state.priority_rankings_cache[cache_key]
-            else:
-                # Get LLM-based priority rankings for affiliations (only if not cached)
-                affiliations_list = list(all_affiliations.items())
+            priority_rankings = st.session_state.priority_rankings_cache.get(cache_key, {})
+            
+            # Show button to analyze priorities if not already analyzed
+            if not priority_rankings:
+                st.markdown("---")
+                col1, col2, col3 = st.columns([2, 2, 2])
+                with col2:
+                    if st.button("🎯 Analyze Priority Order with AI", key=f"analyze_priorities_{selected_hco_id}", use_container_width=True):
+                        st.session_state[f'analyze_priorities_clicked_{cache_key}'] = True
+                        st.rerun()
                 
-                # Show prominent status message
-                status_placeholder = st.empty()
-                status_placeholder.info("🤖 **AI Analysis in Progress**\n\nSending affiliation data to LLM to determine priority order and reasoning...")
-                
-                with st.spinner("⏳ Fetching priority rankings and reasons from AI..."):
-                    priority_rankings = get_affiliation_priorities_from_llm(
-                        session, 
-                        current_data_dict, 
-                        affiliations_list
-                    )
-                
-                # Clear the status message after completion
-                status_placeholder.empty()
-                st.toast("✅ AI analysis complete! Affiliations ranked by priority.", icon="🎯")
-                
-                # Cache the results
-                st.session_state.priority_rankings_cache[cache_key] = priority_rankings
+                # Check if button was clicked to trigger analysis
+                if st.session_state.get(f'analyze_priorities_clicked_{cache_key}', False):
+                    affiliations_list = list(all_affiliations.items())
+                    
+                    # Show prominent status message
+                    status_placeholder = st.empty()
+                    status_placeholder.info("🤖 **AI Analysis in Progress**\n\nSending affiliation data to LLM to determine priority order and reasoning...")
+                    
+                    with st.spinner("⏳ Fetching priority rankings and reasons from AI..."):
+                        priority_rankings = get_affiliation_priorities_from_llm(
+                            session, 
+                            current_data_dict, 
+                            affiliations_list
+                        )
+                    
+                    # Clear the status message after completion
+                    status_placeholder.empty()
+                    st.toast("✅ AI analysis complete! Affiliations ranked by priority.", icon="🎯")
+                    
+                    # Cache the results and clear the click state
+                    st.session_state.priority_rankings_cache[cache_key] = priority_rankings
+                    st.session_state[f'analyze_priorities_clicked_{cache_key}'] = False
+                    st.rerun()
             
             # Store priority rankings in session state for popup access
             st.session_state.priority_reasons = priority_rankings
             
-            # Sort affiliations by LLM priority (lower priority number = higher rank, ascending order)
+            # Sort affiliations by LLM priority if available, otherwise keep original order
             def get_priority_for_sort(item):
+                if not priority_rankings:
+                    return 0  # Keep original order if no rankings
                 try:
                     return int(priority_rankings.get(str(item[0]), {}).get("priority", 999))
                 except (ValueError, TypeError):
@@ -720,21 +733,24 @@ def render_enrichment_page(session, selected_hco_df):
                 row_cols[7].write(hco_data.get("HCO STATE", ""))
                 row_cols[8].write(hco_data.get("HCO ZIP", ""))
                 
-                # Priority column
+                # Priority column - show "-" if not analyzed yet
                 priority_info = priority_rankings.get(str(hco_id), {"priority": "-", "reason": "N/A"})
                 row_cols[9].write(str(priority_info.get("priority", "-")))
                 
-                # Reason button column - shows popup with LLM reasoning
+                # Reason button column - only show if priorities have been analyzed
                 with row_cols[10]:
-                    reason_key = f"reason_{hco_id}"
-                    if st.button("ℹ️", key=reason_key, help="Click to see why this priority was assigned"):
-                        st.session_state.show_reason_popup = True
-                        st.session_state.reason_popup_data = {
-                            "hco_name": hco_data.get("HCO NAME", "Unknown"),
-                            "priority": priority_info.get("priority", "-"),
-                            "reason": priority_info.get("reason", "No reason available")
-                        }
-                        st.rerun()
+                    if priority_rankings:
+                        reason_key = f"reason_{hco_id}"
+                        if st.button("ℹ️", key=reason_key, help="Click to see why this priority was assigned"):
+                            st.session_state.show_reason_popup = True
+                            st.session_state.reason_popup_data = {
+                                "hco_name": hco_data.get("HCO NAME", "Unknown"),
+                                "priority": priority_info.get("priority", "-"),
+                                "reason": priority_info.get("reason", "No reason available")
+                            }
+                            st.rerun()
+                    else:
+                        st.write("-")
 
     #----------end of provider_info_change
 
