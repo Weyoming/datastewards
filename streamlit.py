@@ -634,25 +634,41 @@ def render_enrichment_page(session, selected_hco_df):
         if not all_affiliations:
             st.info("No HCO affiliations were found.")
         else:
-            # Get LLM-based priority rankings for affiliations
-            affiliations_list = list(all_affiliations.items())
-            with st.spinner("🤖 Analyzing affiliations with AI..."):
-                priority_rankings = get_affiliation_priorities_from_llm(
-                    session, 
-                    current_data_dict, 
-                    affiliations_list
-                )
+            # Create a cache key based on selected HCO ID and affiliation keys
+            selected_hco_id = current_data_dict.get('ID', '')
+            affiliation_keys = sorted([str(k) for k in all_affiliations.keys()])
+            cache_key = f"{selected_hco_id}_{'_'.join(affiliation_keys[:5])}"  # Use first 5 keys for cache key
+            
+            # Initialize priority cache in session state if not exists
+            if 'priority_rankings_cache' not in st.session_state:
+                st.session_state.priority_rankings_cache = {}
+            
+            # Check if we already have cached priority rankings for this HCO
+            if cache_key in st.session_state.priority_rankings_cache:
+                priority_rankings = st.session_state.priority_rankings_cache[cache_key]
+            else:
+                # Get LLM-based priority rankings for affiliations (only if not cached)
+                affiliations_list = list(all_affiliations.items())
+                with st.spinner("🤖 Analyzing affiliations with AI..."):
+                    priority_rankings = get_affiliation_priorities_from_llm(
+                        session, 
+                        current_data_dict, 
+                        affiliations_list
+                    )
+                # Cache the results
+                st.session_state.priority_rankings_cache[cache_key] = priority_rankings
             
             # Store priority rankings in session state for popup access
-            if 'priority_reasons' not in st.session_state:
-                st.session_state.priority_reasons = {}
             st.session_state.priority_reasons = priority_rankings
             
-            # Sort affiliations by LLM priority (lower priority number = higher rank)
-            sorted_affiliations = sorted(
-                all_affiliations.items(),
-                key=lambda item: priority_rankings.get(str(item[0]), {}).get("priority", 999)
-            )
+            # Sort affiliations by LLM priority (lower priority number = higher rank, ascending order)
+            def get_priority_for_sort(item):
+                try:
+                    return int(priority_rankings.get(str(item[0]), {}).get("priority", 999))
+                except (ValueError, TypeError):
+                    return 999
+            
+            sorted_affiliations = sorted(all_affiliations.items(), key=get_priority_for_sort)
             
             for hco_id, hco_data in sorted_affiliations:
                 # Match header columns: 11 columns total
