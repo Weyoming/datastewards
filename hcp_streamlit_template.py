@@ -159,6 +159,7 @@ def send_cortex_message(session, prompt: str) -> dict:
 
 def process_cortex_message(session, prompt: str):
     """Process user message and update session state."""
+    st.write(session, prompt)
     st.session_state.messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
     
     with st.spinner("Searching..."):
