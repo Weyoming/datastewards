@@ -61,28 +61,34 @@ SEARCH_RESULT_COL_SIZES = (0.8, 2, 1.2, 1.5, 1.2, 0.8)
 
 # Main Page Configuration
 MAIN_PAGE_TABLES_CONFIG = {
-    "search_results": [
-
-    ],
     "demographics": {
-        "identiy_fields": [
-            {"label": "Prefix", "key":"PREFIX"},
-            {"label": "First Name", "key":"FIRST_NM"},
-            {"label": "Middle Name", "key":"MIDDLE_NM"},
-            {"label": "Last Name", "key":"LAST_NM"},
-            {"label": "Suffix", "key":"SUFFIX"},
-            {"label": "Degree", "key":"DEGREE"},
+        "identity_fields": [
+            {"label": "Prefix", "key": "PREFIX"},
+            {"label": "First Name", "key": "FIRST_NM"},
+            {"label": "Middle Name", "key": "MIDDLE_NM"},
+            {"label": "Last Name", "key": "LAST_NM"},
+            {"label": "Suffix", "key": "SUFFIX"},
+            {"label": "Degree", "key": "DEGREE"},
         ],
         "address_fields": [
-            {"label": "Address Line 1", "key":"ADDRESS1"},
-            {"label": "Address Line 2", "key":"ADDRESS2"},
-            {"label": "City", "key":"CITY"},
-            {"label": "State", "key":"STATE"},
-            {"label": "ZIP", "key":"ZIP"},
-            {"label": "Country", "key":"COUNTRY"}
+            {"label": "Address Line 1", "key": "ADDRESS1"},
+            {"label": "Address Line 2", "key": "ADDRESS2"},
+            {"label": "City", "key": "CITY"},
+            {"label": "State", "key": "STATE"},
+            {"label": "ZIP", "key": "ZIP"},
+            {"label": "Country", "key": "COUNTRY"}
+        ],
+        "id_field": "ID",
+        "name_field": "NAME",
+    },
+    "affiliations": {
+        "primary_affiliation_id_field": "PRIMARY_AFFL_HCO_ACCOUNT_ID",
+        "display_fields": [
+            {"label": f"{APP_CONFIG['entity_name']} ID", "key": "ID"},
+            {"label": f"Primary {APP_CONFIG['affiliation_name']} ID", "key": "PRIMARY_AFFL_HCO_ACCOUNT_ID"},
+            {"label": f"{APP_CONFIG['entity_name']} Name", "key": "NAME"},
         ]
     },
-    "affiliations": [{}],
 }
 
 # Enrichment Page Configuration
@@ -446,6 +452,19 @@ CUSTOM_CSS = """
     div[data-testid="stCheckbox"] {
         padding-top: 0px; 
     }
+    
+    /* Detail key-value styling for demographics/affiliations */
+    .detail-key {
+        font-weight: 600;
+        color: #4F8BE7;
+        margin-top: 0.5rem;
+        font-size: 0.85rem;
+    }
+    .detail-value {
+        padding-bottom: 0.5rem;
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
 </style>
 """
 
@@ -598,16 +617,100 @@ def display_search_results(session, df: pd.DataFrame):
             st.rerun()
 
 def display_demographics_table():
+    """Render demographics details using config-driven approach."""
     st.subheader(f"Current {APP_CONFIG['entity_name'].title()} Demographic Details")
-
+    
+    # Get selected record from session state
+    selected_id = get_selected_entity_id()
+    if not selected_id or st.session_state.results_df is None:
+        st.info("No record selected.")
+        return
+    
+    id_col = "ID" if "ID" in st.session_state.results_df.columns else f"{APP_CONFIG['entity_name']}_ID"
+    selected_df = st.session_state.results_df[
+        st.session_state.results_df[id_col].astype(str) == str(selected_id)
+    ]
+    
+    if selected_df.empty:
+        st.info("No record data available.")
+        return
+    
+    selected_record = selected_df.iloc[0]
+    config = MAIN_PAGE_TABLES_CONFIG["demographics"]
+    
     with st.container(border=True):
-        pass
+        # ID and Name header row
+        entity_id = get_safe_value(selected_record, config["id_field"])
+        entity_name = get_safe_value(selected_record, config["name_field"])
+        st.markdown(f'**ID:** {entity_id} - {entity_name}')
+        st.markdown("<hr style='margin-top: 0; margin-bottom: 0.5rem; border-top: 1px solid rgba(128,128,128,0.3);'>", unsafe_allow_html=True)
+        
+        # Two-column layout for identity and address fields
+        col_identity, col_address = st.columns(2)
+        
+        # Render Identity Fields (Left Column)
+        for field in config["identity_fields"]:
+            value = get_safe_value(selected_record, field["key"])
+            col_identity.markdown(
+                f'<div class="detail-key">{field["label"]}:</div>'
+                f'<div class="detail-value">{value}</div>',
+                unsafe_allow_html=True
+            )
+        
+        # Render Address Fields (Right Column)
+        for field in config["address_fields"]:
+            value = get_safe_value(selected_record, field["key"])
+            col_address.markdown(
+                f'<div class="detail-key">{field["label"]}:</div>'
+                f'<div class="detail-value">{value}</div>',
+                unsafe_allow_html=True
+            )
 
 def display_affiliations_table():
+    """Render primary affiliation details using config-driven approach."""
     st.subheader(f"Primary {APP_CONFIG['affiliation_name'].title()} Affiliation Details")
-
+    
+    # Get selected record from session state
+    selected_id = get_selected_entity_id()
+    if not selected_id or st.session_state.results_df is None:
+        st.info("No record selected.")
+        return
+    
+    id_col = "ID" if "ID" in st.session_state.results_df.columns else f"{APP_CONFIG['entity_name']}_ID"
+    selected_df = st.session_state.results_df[
+        st.session_state.results_df[id_col].astype(str) == str(selected_id)
+    ]
+    
+    if selected_df.empty:
+        st.info("No record data available.")
+        return
+    
+    selected_record = selected_df.iloc[0]
+    config = MAIN_PAGE_TABLES_CONFIG["affiliations"]
+    
     with st.container(border=True):
-        pass
+        col_left, col_right = st.columns(2)
+        
+        # Render affiliation display fields in alternating columns
+        for idx, field in enumerate(config["display_fields"]):
+            raw_value = selected_record.get(field["key"])
+            
+            # Format numeric IDs properly
+            if "ID" in field["key"] and pd.notna(raw_value) and raw_value is not None:
+                try:
+                    value = str(int(raw_value))
+                except (ValueError, TypeError):
+                    value = str(raw_value) if raw_value else "N/A"
+            else:
+                value = get_safe_value(selected_record, field["key"])
+            
+            # Alternate between columns
+            target_col = col_left if idx % 2 == 0 else col_right
+            target_col.markdown(
+                f'<div class="detail-key">{field["label"]}:</div>'
+                f'<div class="detail-value">{value}</div>',
+                unsafe_allow_html=True
+            )
 
 def create_empty_record_and_redirect():
     """Create empty record and redirect to enrichment."""
