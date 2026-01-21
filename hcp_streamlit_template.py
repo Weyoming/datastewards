@@ -538,7 +538,7 @@ def show_priority_dialog():
     st.markdown("---")
     st.write(popup_data.get('reason', 'N/A'))
 
-@st.dialog("⚠️ Confirm Updates")
+@st.dialog("⚠️ Confirm Updates", width="large")
 def show_confirm_update_dialog():
     """Dialog to confirm changes before DB update."""
     changes = st.session_state.get('pending_changes', [])
@@ -550,11 +550,21 @@ def show_confirm_update_dialog():
             st.rerun()
         return
 
+    record_id = changes[0].get('id') if changes else None
+    
+    # Validate record_id
+    if not record_id or record_id == 'N/A':
+        st.error("Cannot update: No valid record ID. This may be a new record from web search.")
+        if st.button("Close"):
+            st.session_state.show_confirm_dialog = False
+            st.rerun()
+        return
+
     st.warning("Are you sure you want to apply these updates?", icon="⚠️")
+    st.caption(f"Record ID: **{record_id}**")
     
     st.markdown("### Pending Changes")
     for change in changes:
-        # Use vertical_alignment="center" here too
         col1, col2, col3 = st.columns([1.5, 2, 2], vertical_alignment="center")
         col1.markdown(f"**{change['field']}**")
         col2.markdown(f"Current: `{change['current']}`")
@@ -565,11 +575,6 @@ def show_confirm_update_dialog():
     with col_submit:
         if st.button("✅ Yes, Update Database", type="primary", use_container_width=True):
             session = get_snowflake_session()
-            record_id = changes[0].get('id') if changes else None
-            
-            if not record_id:
-                st.error("No record ID found for update.")
-                return
             
             with st.spinner("Updating record in Snowflake..."):
                 try:
@@ -606,6 +611,13 @@ def show_confirm_update_dialog():
                     if update_result.rows_updated > 0:
                         updated_cols_str = ", ".join(updated_columns)
                         st.success(f"✅ Record ID {record_id} updated successfully! Changed: {updated_cols_str}")
+                        
+                        # Clear checkbox selections
+                        for change in changes:
+                            checkbox_key = f"approve_{record_id}_{DATABASE_UPDATE_CONFIG['field_to_column_map'].get(change['field'], '')}"
+                            if checkbox_key in st.session_state:
+                                st.session_state[checkbox_key] = False
+                        
                         st.session_state.show_confirm_dialog = False
                         st.session_state.pending_changes = []
                         time.sleep(1.5)
