@@ -2,12 +2,6 @@
 HCP (Healthcare Professional/Doctor) Data Steward Application Template
 ======================================================================
 Enhanced template with improved composability and integrated features.
-
-Key Features:
-- Snowflake Cortex Analyst integration for natural language search
-- Perplexity API for web enrichment
-- LLM-powered affiliation priority ranking
-- Comparison report UI with detailed dialogs
 """
 
 import json
@@ -78,13 +72,14 @@ ENRICHMENT_CONFIG = {
         {"label": "State", "db_col": "STATE", "api_field": "State"},
         {"label": "ZIP", "db_col": "ZIP", "api_field": "ZIP"},
     ],
-    "demographics_col_sizes": (2, 2.5, 2.5, 1, 1), # Label, Current, Proposed, Source, Action
+    # Adjusted widths: Label, Current, Proposed, Source, Action
+    "demographics_col_sizes": (1.5, 2.5, 2.5, 1.5, 1), 
     
     # Affiliation Table
     "affiliations_headers": [
         "Status", "Source", "ID", "Name", "Address", "City", "State", "ZIP", "Priority", "Details"
     ],
-    "affiliations_col_sizes": (1, 1, 1, 2.5, 2, 1.2, 0.8, 0.8, 0.8, 0.8),
+    "affiliations_col_sizes": (0.8, 1, 1, 2.5, 2, 1.2, 0.6, 0.8, 0.8, 0.8),
 }
 
 # Cortex Analyst Configuration
@@ -94,9 +89,6 @@ CORTEX_CONFIG = {
     "stage": st.secrets["snowflake"]["semantic_model_stage"],
     "semantic_model_file": st.secrets["snowflake"]["semantic_model_file"],
 }
-
-# Database table name (customize for your schema)
-TABLE_NAME = "NPI"
 
 # ============================================================================
 # END CONFIGURATION SECTION
@@ -197,7 +189,6 @@ def get_affiliation_priorities(session, entity_data: dict, affiliations: List[Tu
                                entity_type: str = None, affiliation_type: str = None) -> dict:
     """
     Calls Snowflake Cortex REST API to rank affiliations by priority.
-    Returns dict mapping affiliation key to {"priority": int, "reason": str}
     """
     if not affiliations:
         return {}
@@ -215,22 +206,16 @@ Selected {entity_type.title()}:
 - ZIP: {entity_data.get('ZIP', 'N/A')}
 """
     
-    affiliations_info = f"{affiliation_type.title()} affiliations to rank:\n"
+    affiliations_info = ""
     for idx, (key, aff) in enumerate(affiliations):
-        # Handle generic dictionary access for reusability
         aff_name = aff.get('Affiliation_Name', aff.get('HOSPITAL_NAME', 'N/A'))
         aff_addr = aff.get('Affiliation_Address', aff.get('HOSPITAL_ADDRESS', 'N/A'))
         aff_city = aff.get('Affiliation_City', aff.get('HOSPITAL_CITY', 'N/A'))
-        aff_state = aff.get('Affiliation_State', aff.get('HOSPITAL_STATE', 'N/A'))
-        aff_zip = aff.get('Affiliation_ZIP', aff.get('HOSPITAL_ZIP', 'N/A'))
         
         affiliations_info += f"""
 {affiliation_type.title()} {idx + 1} (Key: {key}):
 - Name: {aff_name}
-- Address: {aff_addr}
-- City: {aff_city}
-- State: {aff_state}
-- ZIP: {aff_zip}
+- Address: {aff_addr}, {aff_city}
 - Source: {aff.get('SOURCE', 'N/A')}
 """
     
@@ -287,7 +272,6 @@ Return JSON only: {{ "rankings": [ {{ "key": "...", "priority": 1, "reason": "..
         if resp.status_code >= 400:
             raise Exception(f"API failed: {resp.status_code}")
         
-        # Parse streaming response (simplified for brevity)
         response_text = ""
         for line in resp.text.strip().split("\n"):
             if line.startswith("data: "):
@@ -303,7 +287,6 @@ Return JSON only: {{ "rankings": [ {{ "key": "...", "priority": 1, "reason": "..
                 for r in result.get("rankings", [])}
         
     except Exception as e:
-        st.warning(f"Could not get LLM priority ranking: {e}")
         return {str(key): {"priority": idx + 1, "reason": "Default ordering (LLM unavailable)"} 
                 for idx, (key, _) in enumerate(affiliations)}
 
@@ -320,14 +303,12 @@ def search_entity_web(entity_data, model_name="sonar-pro", use_pro_search=True,
     entity_type = entity_type or APP_CONFIG['entity_name'].lower()
     affiliation_type = affiliation_type or APP_CONFIG['affiliation_name'].lower()
     
-    # Convert to dict if needed
     if hasattr(entity_data, 'to_dict'):
         entity_data = entity_data.to_dict()
     
     def get_val(key):
         val = entity_data.get(key, '')
         if not val:
-            # Try with entity name prefix
             val = entity_data.get(f"{APP_CONFIG['entity_name']}_{key}", '')
         return val or ''
     
@@ -339,15 +320,9 @@ You are a healthcare data research specialist. Search the web for this US {entit
 **{entity_type.title()} to Research:**
 - Name: {entity_name}
 - NPI: {get_val('NPI')}
-- Specialty: {get_val('SPECIALTY')}
 - Address: {get_val('ADDRESS1')}
 - City: {get_val('CITY')}
 - State: {get_val('STATE')}
-- ZIP: {get_val('ZIP')}
-
-**CRITICAL INSTRUCTIONS:**
-1. Search thoroughly - do NOT return "N/A" for addresses if entity exists
-2. Search NPI registries, {affiliation_type} websites, medical directories
 
 **Part 1 - {entity_type.title()} Details:**
 - Name, NPI, Specialty
@@ -359,8 +334,6 @@ For each {affiliation_type} where {entity_type} practices:
 - Affiliation_ID: NPI number (10 digits) or "N/A"
 - Affiliation_Name, Affiliation_NPI
 - Affiliation_Address1, City (CAPS), State (2-letter), ZIP (5-digit)
-
-Include ALL known {affiliation_type}s with complete addresses.
 """
 
     completion = client.chat.completions.create(
@@ -387,51 +360,59 @@ def get_safe_value(record, key, prefix=""):
     return val if val is not None and not (isinstance(val, float) and pd.isna(val)) else 'N/A'
 
 def standardize_list(val):
-    """Ensure value is a list for display logic."""
     if isinstance(val, list):
         return val[0] if val else ""
     return val
 
 # ============================================================================
-# CSS STYLES
+# CSS STYLES (Enhanced for Dark Mode)
 # ============================================================================
 
 CUSTOM_CSS = """
 <style>
-    /* Table row styling */
-    .report-row {
-        border-bottom: 1px solid #e6e6e6;
-        padding: 0.5rem 0;
-        align-items: center;
+    /* Table row separator - subtle in both modes */
+    .report-row-separator {
+        border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+        margin-top: 5px;
+        margin-bottom: 5px;
     }
-    .report-row:hover {
-        background-color: #f8f9fa;
-    }
+
+    /* Header text styling - inherit color for dark/light compatibility */
     .report-header {
-        font-weight: bold;
-        color: #4f4f4f;
-        padding-bottom: 0.5rem;
-        border-bottom: 2px solid #ccc;
+        font-weight: 600;
+        opacity: 0.9;
+        font-size: 0.95rem;
         margin-bottom: 0.5rem;
     }
-    /* Proposed value highlighting */
+
+    /* Proposed value highlighting - Dark Mode Friendly 
+       Using transparent background + border instead of solid pastel
+    */
     .proposed-val {
-        color: #2E7D32; /* Green */
-        font-weight: 500;
-        background-color: #F1F8E9;
-        padding: 2px 6px;
-        border-radius: 4px;
-        border: 1px solid #C8E6C9;
+        color: #4CAF50; /* Brighter green visible on dark & light */
+        border: 1px solid #4CAF50;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-weight: 600;
+        background-color: rgba(76, 175, 80, 0.1); /* Subtle transparent background */
+        font-size: 0.9rem;
     }
-    /* Cell alignment */
+    
+    /* Standard cell text */
     .cell-text {
-        font-size: 14px;
+        font-size: 0.9rem;
         word-wrap: break-word;
+        opacity: 0.9;
     }
-    /* Button fixes */
+
+    /* Remove button padding quirks */
     div[data-testid="stButton"] button {
-        height: auto;
-        padding: 4px 12px;
+        border-radius: 6px;
+    }
+    
+    /* Fix checkbox alignment in columns */
+    div[data-testid="stCheckbox"] {
+        padding-top: 0px; 
     }
 </style>
 """
@@ -445,21 +426,17 @@ def show_priority_dialog():
     """Display priority reasoning dialog."""
     popup_data = st.session_state.get('reason_popup_data', {})
     
-    st.markdown(f"**{APP_CONFIG['affiliation_name']}:** {popup_data.get('affiliation_name', 'Unknown')}")
+    st.subheader(f"{popup_data.get('affiliation_name', 'Unknown')}")
     priority = popup_data.get('priority', '-')
+    
     st.markdown(
-        f"<span style='display: inline-block; background-color: #4CAF50; color: white; "
-        f"padding: 0.25rem 0.75rem; border-radius: 15px; font-weight: bold;'>"
+        f"<span style='display: inline-block; border: 1px solid #4CAF50; color: #4CAF50; "
+        f"padding: 0.25rem 0.75rem; border-radius: 15px; font-weight: bold; background-color: rgba(76, 175, 80, 0.1);'>"
         f"Priority {priority}</span>", 
         unsafe_allow_html=True
     )
     st.markdown("---")
-    st.markdown(f"""
-    <div style='background-color: #f8f9fa; padding: 1rem; border-radius: 5px; 
-                border-left: 4px solid #1f77b4;'>
-        <strong>Reason:</strong><br>{popup_data.get('reason', 'N/A')}
-    </div>
-    """, unsafe_allow_html=True)
+    st.write(popup_data.get('reason', 'N/A'))
 
 @st.dialog("⚠️ Confirm Updates")
 def show_confirm_update_dialog():
@@ -475,43 +452,43 @@ def show_confirm_update_dialog():
 
     st.warning("Are you sure you want to apply these updates?", icon="⚠️")
     
-    # Simple table for changes
     st.markdown("### Pending Changes")
     for change in changes:
-        col1, col2, col3 = st.columns([1.5, 2, 2])
+        # Use vertical_alignment="center" here too
+        col1, col2, col3 = st.columns([1.5, 2, 2], vertical_alignment="center")
         col1.markdown(f"**{change['field']}**")
-        col1.caption(f"ID: {change['id']}")
-        col2.markdown(f"*Current:* `{change['current']}`")
-        col3.markdown(f"*New:* :green[`{change['proposed']}`]")
-        st.markdown("---")
+        col2.markdown(f"Current: `{change['current']}`")
+        col3.markdown(f"New: :green[`{change['proposed']}`]")
+        st.divider()
         
     col_submit, col_cancel = st.columns(2)
     with col_submit:
-        if st.button("✅ Yes, Update Database", type="primary"):
-            # Update Logic Placeholder
-            # In a real app, perform SQL UPDATE here
+        if st.button("✅ Yes, Update Database", type="primary", use_container_width=True):
             st.toast("Updated successfully! (Simulation)", icon="💾")
             st.session_state.show_confirm_dialog = False
             st.session_state.pending_changes = []
             st.rerun()
             
     with col_cancel:
-        if st.button("❌ Cancel"):
+        if st.button("❌ Cancel", use_container_width=True):
             st.session_state.show_confirm_dialog = False
             st.rerun()
 
 def render_comparison_section(current_record: dict, proposed_data: dict, record_id: str):
     """
-    Renders the demographic comparison table using config.
+    Renders the demographic comparison table.
+    Uses vertical_alignment="center" for alignment.
     """
-    st.markdown("### 👤 Demographic Details")
+    st.subheader("👤 Demographic Details")
     
     # Headers
     headers = ["Field", "Current Value", "Proposed Value", "Source", "Update?"]
-    cols = st.columns(ENRICHMENT_CONFIG["demographics_col_sizes"])
+    cols = st.columns(ENRICHMENT_CONFIG["demographics_col_sizes"], vertical_alignment="bottom")
     for col_obj, header in zip(cols, headers):
         col_obj.markdown(f"<div class='report-header'>{header}</div>", unsafe_allow_html=True)
         
+    st.markdown("<hr style='margin: 0.5rem 0;'>", unsafe_allow_html=True)
+
     # Rows
     for row_config in ENRICHMENT_CONFIG["demographics"]:
         label = row_config["label"]
@@ -519,55 +496,41 @@ def render_comparison_section(current_record: dict, proposed_data: dict, record_
         api_field = row_config["api_field"]
         
         current_val = get_safe_value(current_record, db_col)
-        
-        # Handle list vs string from API
         proposed_raw = proposed_data.get(api_field, "")
         proposed_val = standardize_list(proposed_raw)
         
-        # Source formatting
-        source_display = "Web Search" # Simplify for template
+        # Render Row with Vertical Alignment
+        r_cols = st.columns(ENRICHMENT_CONFIG["demographics_col_sizes"], vertical_alignment="center")
         
-        # Render Row
-        with st.container():
-            st.markdown('<div class="report-row">', unsafe_allow_html=True)
-            r_cols = st.columns(ENRICHMENT_CONFIG["demographics_col_sizes"])
+        r_cols[0].markdown(f"**{label}**")
+        r_cols[1].markdown(f"<span class='cell-text'>{current_val}</span>", unsafe_allow_html=True)
+        
+        # Highlight logic
+        if str(current_val).strip() != str(proposed_val).strip() and proposed_val:
+            r_cols[2].markdown(f"<span class='proposed-val cell-text'>{proposed_val}</span>", unsafe_allow_html=True)
+        else:
+            r_cols[2].markdown(f"<span class='cell-text'>{proposed_val}</span>", unsafe_allow_html=True)
             
-            r_cols[0].markdown(f"**{label}**")
-            r_cols[1].markdown(f"<span class='cell-text'>{current_val}</span>", unsafe_allow_html=True)
-            
-            # Highlight if different
-            if str(current_val).strip() != str(proposed_val).strip() and proposed_val:
-                r_cols[2].markdown(f"<span class='proposed-val cell-text'>{proposed_val}</span>", unsafe_allow_html=True)
-            else:
-                r_cols[2].markdown(f"<span class='cell-text'>{proposed_val}</span>", unsafe_allow_html=True)
-                
-            r_cols[3].caption(source_display)
-            
-            # Checkbox for approval
-            checkbox_key = f"approve_{record_id}_{db_col}"
-            r_cols[4].checkbox("Approve", key=checkbox_key, label_visibility="collapsed")
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+        r_cols[3].caption("Web Search")
+        
+        checkbox_key = f"approve_{record_id}_{db_col}"
+        r_cols[4].checkbox("Approve", key=checkbox_key, label_visibility="collapsed")
+        
+        # Row separator
+        st.markdown("<div class='report-row-separator'></div>", unsafe_allow_html=True)
 
 def render_affiliation_section(session, current_record: dict, proposed_affiliations: List[dict]):
     """
-    Renders the affiliations table with priority ranking.
+    Renders the affiliations table.
+    Uses vertical_alignment="center" for alignment.
     """
-    st.markdown(f"### 🏥 {APP_CONFIG['affiliation_name']} Affiliations")
+    st.subheader(f"🏥 {APP_CONFIG['affiliation_name']} Affiliations")
     
-    # Combine DB and Proposed Affiliations
+    # Data Processing (Same as before)
     all_affiliations = {}
     
-    # 1. Existing DB Affiliations (Mock query wrapper)
-    hcp_npi = get_safe_value(current_record, "NPI")
-    if hcp_npi and hcp_npi != 'N/A':
-        # Placeholder for actual DB query
-        # db_affs = session.sql(f"SELECT ... WHERE NPI = '{hcp_npi}'").to_pandas()
-        pass
-
-    # 2. Add Proposed (AI) Affiliations
+    # Add Proposed (AI) Affiliations
     for item in proposed_affiliations:
-        # Flatten Pydantic/Dict structure
         aff_id = standardize_list(item.get("Affiliation_ID", "N/A"))
         key = aff_id if aff_id != "N/A" else f"new_{item.get('Affiliation_Name', [''])[0]}"
         
@@ -581,10 +544,9 @@ def render_affiliation_section(session, current_record: dict, proposed_affiliati
             "Source": "AI Found"
         }
 
-    # Priority Analysis
+    # Analysis Button
     if all_affiliations and st.button("🎯 Analyze Priority Order with AI"):
         with st.spinner("Analyzing priorities..."):
-            # Prepare list for API
             aff_list_for_api = [(k, v) for k, v in all_affiliations.items()]
             rankings = get_affiliation_priorities(session, current_record, aff_list_for_api)
             st.session_state.priority_rankings = rankings
@@ -592,25 +554,24 @@ def render_affiliation_section(session, current_record: dict, proposed_affiliati
 
     rankings = st.session_state.get('priority_rankings', {})
 
-    # Table Header
-    cols = st.columns(ENRICHMENT_CONFIG["affiliations_col_sizes"])
+    # Table Header - aligned bottom
+    cols = st.columns(ENRICHMENT_CONFIG["affiliations_col_sizes"], vertical_alignment="bottom")
     for col, header in zip(cols, ENRICHMENT_CONFIG["affiliations_headers"]):
         col.markdown(f"**{header}**")
         
-    st.markdown("---")
+    st.markdown("<hr style='margin: 0.5rem 0;'>", unsafe_allow_html=True)
 
     # Render Rows
-    # Sort by priority if available
     sorted_items = sorted(
         all_affiliations.items(),
         key=lambda x: rankings.get(x[0], {}).get("priority", 999)
     )
 
     for key, data in sorted_items:
-        r_cols = st.columns(ENRICHMENT_CONFIG["affiliations_col_sizes"])
+        # Vertical Alignment Center for Rows
+        r_cols = st.columns(ENRICHMENT_CONFIG["affiliations_col_sizes"], vertical_alignment="center")
         
-        # Status/Actions
-        r_cols[0].write("New") # simplified
+        r_cols[0].markdown(":green[**New**]")
         r_cols[1].caption(data['Source'])
         r_cols[2].write(data['ID'])
         r_cols[3].write(data['Name'])
@@ -619,20 +580,20 @@ def render_affiliation_section(session, current_record: dict, proposed_affiliati
         r_cols[6].write(data['State'])
         r_cols[7].write(data['ZIP'])
         
-        # Priority
         p_info = rankings.get(key, {})
-        r_cols[8].write(str(p_info.get("priority", "-")))
+        priority = p_info.get("priority", "-")
+        r_cols[8].markdown(f"**{priority}**" if priority != "-" else "-")
         
-        # Details Button
-        if p_info and r_cols[9].button("ℹ️", key=f"reason_{key}"):
-            st.session_state.reason_popup_data = {
-                "affiliation_name": data['Name'],
-                "priority": p_info.get("priority"),
-                "reason": p_info.get("reason")
-            }
-            show_priority_dialog()
-            
-        st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 4px 0;'></div>", unsafe_allow_html=True)
+        if p_info:
+            if r_cols[9].button("ℹ️", key=f"reason_{key}"):
+                st.session_state.reason_popup_data = {
+                    "affiliation_name": data['Name'],
+                    "priority": priority,
+                    "reason": p_info.get("reason")
+                }
+                show_priority_dialog()
+        
+        st.markdown("<div class='report-row-separator'></div>", unsafe_allow_html=True)
 
 # ============================================================================
 # MAIN PAGE
@@ -642,27 +603,24 @@ def render_main_page(session):
     """Render the main search page."""
     st.title(f"🏥 {APP_CONFIG['page_title']}")
     
-    # Search input
-    with st.container(border=True):
+    with st.container():
         user_input = st.chat_input(APP_CONFIG["search_placeholder"])
         if user_input and user_input != st.session_state.get("last_prompt"):
             process_cortex_message(session, user_input)
             st.session_state.last_prompt = user_input
     
-    # Display results
     if st.session_state.messages:
         assistant_msgs = [m for m in st.session_state.messages if m["role"] == "assistant"]
         if assistant_msgs:
             st.markdown("---")
             content = assistant_msgs[-1]["content"]
             
-            # Show interpretation
             if len(content) > 1 and content[1].get("type") == "text":
                 st.markdown(f'**Interpretation:** "{content[1].get("text", "")}"')
             
-            # Search results
-            with st.container(border=True):
-                st.markdown("## Search Results")
+            # Removed border=True
+            with st.container():
+                st.subheader("Search Results")
                 
                 sql_found = False
                 for item in content:
@@ -680,7 +638,6 @@ def render_main_page(session):
                 if not sql_found:
                     st.info("No SQL query returned. Try rephrasing your search.")
             
-            # Web Search Fallback Option
             if not sql_found or (st.session_state.results_df is not None and st.session_state.results_df.empty):
                 st.markdown("---")
                 if st.button(f"🔍 Proceed with Web Search for '{st.session_state.last_prompt}'?", type="primary"):
@@ -690,15 +647,18 @@ def display_search_results(session, df: pd.DataFrame):
     """Display search results table with selection."""
     st.write("Select a record to enrich:")
     
-    cols = st.columns(SEARCH_RESULT_COL_SIZES)
+    # Vertical alignment for main search table too
+    cols = st.columns(SEARCH_RESULT_COL_SIZES, vertical_alignment="bottom")
     for col_obj, header in zip(cols, ["Select"] + SEARCH_RESULT_COLUMNS[1:]):
         col_obj.markdown(f"**{header}**")
     
+    st.divider()
+
     for _, row in df.iterrows():
         row_id = row.get("ID") or row.get(f"{APP_CONFIG['entity_name']}_ID")
         is_selected = str(row_id) == str(st.session_state.get("selected_entity_id"))
         
-        row_cols = st.columns(SEARCH_RESULT_COL_SIZES)
+        row_cols = st.columns(SEARCH_RESULT_COL_SIZES, vertical_alignment="center")
         
         if is_selected:
             row_cols[0].write("✅")
@@ -710,9 +670,11 @@ def display_search_results(session, df: pd.DataFrame):
         for i, col_name in enumerate(SEARCH_RESULT_COLUMNS[1:], 1):
             db_col = ENTITY_COLUMNS.get(col_name, col_name.upper())
             row_cols[i].write(get_safe_value(row, db_col))
+        
+        st.markdown("<div class='report-row-separator'></div>", unsafe_allow_html=True)
 
     if st.session_state.get("selected_entity_id"):
-        st.markdown("---")
+        st.markdown("<br>", unsafe_allow_html=True)
         if st.button("Enrich Selected Record 🚀", type="primary"):
             st.session_state.current_view = "enrichment_page"
             st.rerun()
@@ -734,7 +696,7 @@ def create_empty_record_and_redirect():
 def render_enrichment_page(session, selected_df):
     """Render the modular enrichment comparison page."""
     
-    # 1. Navigation
+    # Navigation
     _, btn_col = st.columns([4, 1])
     with btn_col:
         if st.button("⬅️ Back to Search"):
@@ -742,12 +704,10 @@ def render_enrichment_page(session, selected_df):
             st.session_state.priority_rankings = {} 
             st.rerun()
 
-    # 2. Styles and Dialogs
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
     if st.session_state.get('show_confirm_dialog'):
         show_confirm_update_dialog()
         
-    # 3. Data Preparation
     if selected_df.empty:
         st.error("No record data available.")
         return
@@ -755,7 +715,6 @@ def render_enrichment_page(session, selected_df):
     current_record = selected_df.iloc[0].to_dict()
     record_id = get_safe_value(current_record, "ID", "")
     
-    # 4. Fetch Enriched Data
     @st.cache_data(ttl=600)
     def get_enriched_data(_session, record_dict, search_query=None):
         try:
@@ -772,17 +731,10 @@ def render_enrichment_page(session, selected_df):
         st.warning("Could not retrieve data from web search.")
         return
 
-    # Extract data parts
-    # The API returns nested dicts: {'entity_data': {...}, 'affiliation_data': {...}}
     proposed_entity = api_response.get("entity_data", {})
-    # Note: affiliation_data is returned as an object with lists in the template's model. 
-    # We need to transpose this for the table if it's column-oriented, or handle list of dicts.
-    # The Pydantic model "AffiliationData" is column-oriented (List[str]).
-    # We will assume column-oriented and transpose for display.
     raw_aff_data = api_response.get("affiliation_data", {})
     proposed_affiliations = []
     
-    # Simple transpose logic for AffiliationData model
     if raw_aff_data and "Affiliation_ID" in raw_aff_data:
         count = len(raw_aff_data["Affiliation_ID"])
         for i in range(count):
@@ -794,17 +746,15 @@ def render_enrichment_page(session, selected_df):
                     row[key] = ""
             proposed_affiliations.append(row)
 
-    # 5. Render Components
     st.title("📑 Comparison Report")
     st.info(f"Comparing Database Record (ID: {record_id}) vs. Web Search Results")
     
-    with st.container(border=True):
+    # Removed border=True
+    with st.container():
         render_comparison_section(current_record, proposed_entity, record_id)
         
-        # Global Update Button for Demographics
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("💾 Update Selected Fields", type="primary"):
-            # Gather changes
             changes = []
             for row in ENRICHMENT_CONFIG["demographics"]:
                 key = f"approve_{record_id}_{row['db_col']}"
@@ -822,7 +772,8 @@ def render_enrichment_page(session, selected_df):
 
     st.markdown("<br>", unsafe_allow_html=True)
     
-    with st.container(border=True):
+    # Removed border=True
+    with st.container():
         render_affiliation_section(session, current_record, proposed_affiliations)
 
 # ============================================================================
@@ -831,7 +782,6 @@ def render_enrichment_page(session, selected_df):
 
 st.set_page_config(layout=APP_CONFIG["page_layout"], page_title=APP_CONFIG["page_title"])
 
-# Initialize session state
 SESSION_DEFAULTS = {
     "messages": [],
     "results_df": None,
@@ -846,20 +796,16 @@ SESSION_DEFAULTS = {
 for key, default in SESSION_DEFAULTS.items():
     st.session_state.setdefault(key, default)
 
-# Get session
 session = get_snowflake_session()
 
-# Router
 if st.session_state.current_view == "main":
     render_main_page(session)
 
 elif st.session_state.current_view == "enrichment_page":
-    # Handle empty vs selected record
     if st.session_state.selected_entity_id == 'empty_record':
         empty_df = pd.DataFrame([st.session_state.get('empty_record_for_enrichment', {})])
         render_enrichment_page(session, empty_df)
     elif st.session_state.selected_entity_id and st.session_state.results_df is not None:
-        # Filter for selected ID safely
         id_col = "ID" if "ID" in st.session_state.results_df.columns else f"{APP_CONFIG['entity_name']}_ID"
         selected_df = st.session_state.results_df[
             st.session_state.results_df[id_col].astype(str) == str(st.session_state.selected_entity_id)
