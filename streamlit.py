@@ -259,10 +259,14 @@ def render_enrichment_page(session, selected_hco_df):
     if st.session_state.get('show_reason_popup'):
         popup_data = st.session_state.get('reason_popup_data', {})
         
-        # Modal overlay styling
-        st.markdown("""
+        # Modal overlay styling - use f-string with pre-extracted values
+        hco_name = popup_data.get('hco_name', 'Unknown')
+        priority = popup_data.get('priority', '-')
+        reason = popup_data.get('reason', 'No reason available')
+        
+        modal_html = f"""
             <style>
-            .reason-modal-overlay {
+            .reason-modal-overlay {{
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -270,8 +274,8 @@ def render_enrichment_page(session, selected_hco_df):
                 height: 100%;
                 background-color: rgba(0, 0, 0, 0.5);
                 z-index: 9998;
-            }
-            .reason-modal {
+            }}
+            .reason-modal {{
                 position: fixed;
                 top: 50%;
                 left: 50%;
@@ -283,14 +287,14 @@ def render_enrichment_page(session, selected_hco_df):
                 z-index: 9999;
                 max-width: 500px;
                 width: 90%;
-            }
-            .reason-modal h3 {
+            }}
+            .reason-modal h3 {{
                 margin-top: 0;
                 color: #1f77b4;
                 border-bottom: 2px solid #1f77b4;
                 padding-bottom: 0.5rem;
-            }
-            .reason-modal .priority-badge {
+            }}
+            .reason-modal .priority-badge {{
                 display: inline-block;
                 background-color: #4CAF50;
                 color: white;
@@ -298,14 +302,14 @@ def render_enrichment_page(session, selected_hco_df):
                 border-radius: 15px;
                 font-weight: bold;
                 margin-bottom: 1rem;
-            }
-            .reason-modal .reason-text {
+            }}
+            .reason-modal .reason-text {{
                 background-color: #f8f9fa;
                 padding: 1rem;
                 border-radius: 5px;
                 border-left: 4px solid #1f77b4;
                 margin-bottom: 1rem;
-            }
+            }}
             </style>
             <div class="reason-modal-overlay"></div>
             <div class="reason-modal">
@@ -316,11 +320,8 @@ def render_enrichment_page(session, selected_hco_df):
                     <strong>Reason:</strong><br>{reason}
                 </div>
             </div>
-        """.format(
-            hco_name=popup_data.get('hco_name', 'Unknown'),
-            priority=popup_data.get('priority', '-'),
-            reason=popup_data.get('reason', 'No reason available')
-        ), unsafe_allow_html=True)
+        """
+        st.markdown(modal_html, unsafe_allow_html=True)
         
         # Close button
         if st.button("✕ Close", key="close_reason_popup"):
