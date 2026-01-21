@@ -61,8 +61,27 @@ SEARCH_RESULT_COL_SIZES = (0.8, 2, 1.2, 1.5, 1.2, 0.8)
 
 # Main Page Configuration
 MAIN_PAGE_TABLES_CONFIG = {
-    "search_results": [{}],
-    "demographics": [{}],
+    "search_results": [
+
+    ],
+    "demographics": {
+        "identiy_fields": [
+            {label: "Prefix", key:"PREFIX"},
+            {label: "First Name", key:"FIRST_NM"},
+            {label: "Middle Name", key:"MIDDLE_NM"},
+            {label: "Last Name", key:"LAST_NM"},
+            {label: "Suffix", key:"SUFFIX"},
+            {label: "Degree", key:"DEGREE"},
+        ],
+        "address_fields": [
+            {label: "Address Line 1", key:"ADDRESS1"},
+            {label: "Address Line 2", key:"ADDRESS2"},
+            {label: "City", key:"CITY"},
+            {label: "State", key:"STATE"},
+            {label: "ZIP", key:"ZIP"},
+            {label: "Country", key:"COUNTRY"}
+        ]
+    },
     "affiliations": [{}],
 }
 
@@ -70,14 +89,14 @@ MAIN_PAGE_TABLES_CONFIG = {
 ENRICHMENT_PAGE_TABLES_CONFIG = {
     # Demographics Comparison Table
     "demographics": [
-        {"label": "Name", "db_col": "NAME", "api_field": "Name"},
-        {"label": "NPI", "db_col": "NPI", "api_field": "NPI"},
-        {"label": "Specialty", "db_col": "SPECIALTY", "api_field": "Specialty"},
-        {"label": "Address Line 1", "db_col": "ADDRESS1", "api_field": "Address Line1"},
-        {"label": "Address Line 2", "db_col": "ADDRESS2", "api_field": "Address Line2"},
-        {"label": "City", "db_col": "CITY", "api_field": "City"},
-        {"label": "State", "db_col": "STATE", "api_field": "State"},
-        {"label": "ZIP", "db_col": "ZIP", "api_field": "ZIP"},
+        {"label": "Name", "db_col": "NAME", "key": "Name"},
+        {"label": "NPI", "db_col": "NPI", "key": "NPI"},
+        {"label": "Specialty", "db_col": "SPECIALTY", "key": "Specialty"},
+        {"label": "Address Line 1", "db_col": "ADDRESS1", "key": "Address Line1"},
+        {"label": "Address Line 2", "db_col": "ADDRESS2", "key": "Address Line2"},
+        {"label": "City", "db_col": "CITY", "key": "City"},
+        {"label": "State", "db_col": "STATE", "key": "State"},
+        {"label": "ZIP", "db_col": "ZIP", "key": "ZIP"},
     ],
     # Adjusted widths: Label, Current, Proposed, Source, Action
     "demographics_col_sizes": (1.5, 2.5, 2.5, 1.5, 1), 
@@ -371,6 +390,12 @@ def standardize_list(val):
         return val[0] if val else ""
     return val
 
+def get_selected_entity_id():
+    return st.session_state.get("selected_entity_id")
+
+def get_selected_entity_details():
+    return st.session_state.get("selected_entity_details")
+
 # ============================================================================
 # CSS STYLES (Enhanced for Dark Mode)
 # ============================================================================
@@ -540,7 +565,7 @@ def display_search_results(session, df: pd.DataFrame):
     
     for _, row in df.iterrows():
         row_id = row.get("ID") or row.get(f"{APP_CONFIG['entity_name']}_ID")
-        is_selected = str(row_id) == str(st.session_state.get("selected_entity_id"))
+        is_selected = str(row_id) == str(get_selected_entity_id())
         
         row_cols = st.columns(SEARCH_RESULT_COL_SIZES, vertical_alignment="center")
         
@@ -557,11 +582,32 @@ def display_search_results(session, df: pd.DataFrame):
         
         st.markdown("<div class='report-row-separator'></div>", unsafe_allow_html=True)
 
-    if st.session_state.get("selected_entity_id"):
+    if get_selected_entity_id():
         st.markdown("<br>", unsafe_allow_html=True)
+        
+        demographics_section, affiliations_section = st.columns(2)
+        
+        with demographics_section:
+            display_demographics_table()
+        
+        with affiliations_section:
+            display_affiliations_table()
+
         if st.button("Enrich Selected Record 🚀", type="primary"):
             st.session_state.current_view = "enrichment_page"
             st.rerun()
+
+def display_demographics_table():
+    st.subheader(f"Current {APP_CONFIG['entity_name'].title()} Demographic Details")
+
+    with st.container(border=True):
+        pass
+
+def display_affiliations_table():
+    st.subheader(f"Primary {APP_CONFIG['affiliation_name'].title()} Affiliation Details")
+
+    with st.container(border=True):
+        pass
 
 def create_empty_record_and_redirect():
     """Create empty record and redirect to enrichment."""
@@ -647,7 +693,7 @@ def render_enrichment_page(session, selected_df):
                         "field": row['label'],
                         "id": record_id,
                         "current": get_safe_value(current_record, row['db_col']),
-                        "proposed": standardize_list(proposed_entity.get(row['api_field']))
+                        "proposed": standardize_list(proposed_entity.get(row['key']))
                     })
             
             st.session_state.pending_changes = changes
@@ -679,10 +725,10 @@ def render_comparison_section(current_record: dict, proposed_data: dict, record_
     for row_config in ENRICHMENT_PAGE_TABLES_CONFIG["demographics"]:
         label = row_config["label"]
         db_col = row_config["db_col"]
-        api_field = row_config["api_field"]
+        key = row_config["key"]
         
         current_val = get_safe_value(current_record, db_col)
-        proposed_raw = proposed_data.get(api_field, "")
+        proposed_raw = proposed_data.get(key, "")
         proposed_val = standardize_list(proposed_raw)
         
         # Render Row with Vertical Alignment
