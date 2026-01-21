@@ -46,45 +46,45 @@ def get_affiliation_priorities_from_llm(session, selected_hco_data: dict, affili
     
     # Build the prompt for the LLM
     selected_info = f"""
-    Selected Healthcare Organization:
-    - Name: {selected_hco_data.get('Name', 'N/A')}
-    - Address: {selected_hco_data.get('Address Line1', '')} {selected_hco_data.get('Address Line2', '')}
-    - City: {selected_hco_data.get('City', 'N/A')}
-    - State: {selected_hco_data.get('State', 'N/A')}
-    - ZIP: {selected_hco_data.get('ZIP', 'N/A')}
-    """
-        
-        affiliations_info = "Affiliations to rank:\n"
-        for idx, (key, aff) in enumerate(affiliations):
-            affiliations_info += f"""
-    Affiliation {idx + 1} (Key: {key}):
-    - HCO Name: {aff.get('HCO NAME', 'N/A')}
-    - HCO Address: {aff.get('HCO ADDRESS', 'N/A')}
-    - HCO City: {aff.get('HCO CITY', 'N/A')}
-    - HCO State: {aff.get('HCO STATE', 'N/A')}
-    - HCO ZIP: {aff.get('HCO ZIP', 'N/A')}
-    - Source: {aff.get('SOURCE', 'N/A')}
-    """
-        
-        prompt = f"""You are a healthcare data analyst. Analyze the following selected healthcare organization and its potential affiliations. 
-    Rank each affiliation by priority (1 being highest priority/best match) based on:
-    1. Geographic proximity (same city, state, ZIP code area)
-    2. Name similarity or relationship (parent organization, same health system)
-    3. Address proximity
+Selected Healthcare Organization:
+- Name: {selected_hco_data.get('Name', 'N/A')}
+- Address: {selected_hco_data.get('Address Line1', '')} {selected_hco_data.get('Address Line2', '')}
+- City: {selected_hco_data.get('City', 'N/A')}
+- State: {selected_hco_data.get('State', 'N/A')}
+- ZIP: {selected_hco_data.get('ZIP', 'N/A')}
+"""
+    
+    affiliations_info = "Affiliations to rank:\n"
+    for idx, (key, aff) in enumerate(affiliations):
+        affiliations_info += f"""
+Affiliation {idx + 1} (Key: {key}):
+- HCO Name: {aff.get('HCO NAME', 'N/A')}
+- HCO Address: {aff.get('HCO ADDRESS', 'N/A')}
+- HCO City: {aff.get('HCO CITY', 'N/A')}
+- HCO State: {aff.get('HCO STATE', 'N/A')}
+- HCO ZIP: {aff.get('HCO ZIP', 'N/A')}
+- Source: {aff.get('SOURCE', 'N/A')}
+"""
+    
+    prompt = f"""You are a healthcare data analyst. Analyze the following selected healthcare organization and its potential affiliations. 
+Rank each affiliation by priority (1 being highest priority/best match) based on:
+1. Geographic proximity (same city, state, ZIP code area)
+2. Name similarity or relationship (parent organization, same health system)
+3. Address proximity
 
-    {selected_info}
+{selected_info}
 
-    {affiliations_info}
+{affiliations_info}
 
-    Return your response as a valid JSON object with this exact structure:
-    {{
-        "rankings": [
-            {{"key": "affiliation_key", "priority": 1, "reason": "Brief explanation of why this is priority 1"}},
-            {{"key": "affiliation_key", "priority": 2, "reason": "Brief explanation of why this is priority 2"}}
-        ]
-    }}
+Return your response as a valid JSON object with this exact structure:
+{{
+    "rankings": [
+        {{"key": "affiliation_key", "priority": 1, "reason": "Brief explanation of why this is priority 1"}},
+        {{"key": "affiliation_key", "priority": 2, "reason": "Brief explanation of why this is priority 2"}}
+    ]
+}}
 
-    Only return the JSON object, no other text. Use the exact keys provided for each affiliation."""
+Only return the JSON object, no other text. Use the exact keys provided for each affiliation."""
 
     try:
         # Use Snowflake Cortex REST API with structured JSON output
@@ -225,10 +225,11 @@ def show_popup_without_button(popup_placeholder, message_type, record_info):
             unsafe_allow_html=True
         )
 
-    time.sleep(3)
+    time.sleep(2)
     st.session_state.show_popup = False
     st.session_state.popup_message_info = None
     st.rerun()
+
 
 # --- ENRICHMENT & COMPARISON PAGE FUNCTION ---
 def render_enrichment_page(session, selected_hco_df):
