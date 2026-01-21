@@ -150,6 +150,8 @@ def send_cortex_message(session, prompt: str) -> dict:
         "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
         "semantic_model_file": f"@{CORTEX_CONFIG['database']}.{CORTEX_CONFIG['schema']}.{CORTEX_CONFIG['stage']}/{CORTEX_CONFIG['semantic_model_file']}",
     }
+
+    st.write(request_body)
     
     resp = requests.post(api_url, headers=headers, json=request_body, timeout=30)
     
@@ -159,7 +161,6 @@ def send_cortex_message(session, prompt: str) -> dict:
 
 def process_cortex_message(session, prompt: str):
     """Process user message and update session state."""
-    st.write(session, prompt)
     st.session_state.messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
     
     with st.spinner("Searching..."):
