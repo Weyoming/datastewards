@@ -20,7 +20,7 @@ from snowflake.core import Root
 from snowflake.snowpark import Session
 from snowflake.snowpark.functions import col
 from urllib.parse import urlparse
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from pydantic import BaseModel, Field
 from perplexity import Perplexity
 
@@ -64,6 +64,28 @@ AFFILIATION_COLUMNS = {
 # Search results table configuration
 SEARCH_RESULT_COLUMNS = ["ID", "Name", "NPI", "Specialty", "City", "State"]
 SEARCH_RESULT_COL_SIZES = (0.8, 2, 1.2, 1.5, 1.2, 0.8)
+
+# Enrichment Page Configuration
+ENRICHMENT_CONFIG = {
+    # Demographics Comparison Table
+    "demographics": [
+        {"label": "Name", "db_col": "NAME", "api_field": "Name"},
+        {"label": "NPI", "db_col": "NPI", "api_field": "NPI"},
+        {"label": "Specialty", "db_col": "SPECIALTY", "api_field": "Specialty"},
+        {"label": "Address Line 1", "db_col": "ADDRESS1", "api_field": "Address Line1"},
+        {"label": "Address Line 2", "db_col": "ADDRESS2", "api_field": "Address Line2"},
+        {"label": "City", "db_col": "CITY", "api_field": "City"},
+        {"label": "State", "db_col": "STATE", "api_field": "State"},
+        {"label": "ZIP", "db_col": "ZIP", "api_field": "ZIP"},
+    ],
+    "demographics_col_sizes": (2, 2.5, 2.5, 1, 1), # Label, Current, Proposed, Source, Action
+    
+    # Affiliation Table
+    "affiliations_headers": [
+        "Status", "Source", "ID", "Name", "Address", "City", "State", "ZIP", "Priority", "Details"
+    ],
+    "affiliations_col_sizes": (1, 1, 1, 2.5, 2, 1.2, 0.8, 0.8, 0.8, 0.8),
+}
 
 # Cortex Analyst Configuration
 CORTEX_CONFIG = {
@@ -195,11 +217,12 @@ Selected {entity_type.title()}:
     
     affiliations_info = f"{affiliation_type.title()} affiliations to rank:\n"
     for idx, (key, aff) in enumerate(affiliations):
-        aff_name = aff.get('HOSPITAL_NAME') or aff.get(f'{affiliation_type.upper()}_NAME', 'N/A')
-        aff_addr = aff.get('HOSPITAL_ADDRESS') or aff.get(f'{affiliation_type.upper()}_ADDRESS', 'N/A')
-        aff_city = aff.get('HOSPITAL_CITY') or aff.get(f'{affiliation_type.upper()}_CITY', 'N/A')
-        aff_state = aff.get('HOSPITAL_STATE') or aff.get(f'{affiliation_type.upper()}_STATE', 'N/A')
-        aff_zip = aff.get('HOSPITAL_ZIP') or aff.get(f'{affiliation_type.upper()}_ZIP', 'N/A')
+        # Handle generic dictionary access for reusability
+        aff_name = aff.get('Affiliation_Name', aff.get('HOSPITAL_NAME', 'N/A'))
+        aff_addr = aff.get('Affiliation_Address', aff.get('HOSPITAL_ADDRESS', 'N/A'))
+        aff_city = aff.get('Affiliation_City', aff.get('HOSPITAL_CITY', 'N/A'))
+        aff_state = aff.get('Affiliation_State', aff.get('HOSPITAL_STATE', 'N/A'))
+        aff_zip = aff.get('Affiliation_ZIP', aff.get('HOSPITAL_ZIP', 'N/A'))
         
         affiliations_info += f"""
 {affiliation_type.title()} {idx + 1} (Key: {key}):
@@ -220,7 +243,7 @@ Selected {entity_type.title()}:
 
 {affiliations_info}
 
-Use the exact keys provided."""
+Return JSON only: {{ "rankings": [ {{ "key": "...", "priority": 1, "reason": "..." }} ] }}"""
 
     try:
         account = st.secrets["snowflake"]["account"]
@@ -264,7 +287,7 @@ Use the exact keys provided."""
         if resp.status_code >= 400:
             raise Exception(f"API failed: {resp.status_code}")
         
-        # Parse streaming response
+        # Parse streaming response (simplified for brevity)
         response_text = ""
         for line in resp.text.strip().split("\n"):
             if line.startswith("data: "):
@@ -363,37 +386,11 @@ def get_safe_value(record, key, prefix=""):
         val = record.get(f"{prefix}{key}" if prefix else key)
     return val if val is not None and not (isinstance(val, float) and pd.isna(val)) else 'N/A'
 
-def show_success_popup(popup_placeholder, message_type: str, record_info: dict):
-    """Display auto-dismissing success popup."""
-    with popup_placeholder.container():
-        st.markdown("""
-            <style>
-                .st-popup-container {
-                    position: fixed; top: 20%; left: 50%; transform: translate(-50%, -50%);
-                    z-index: 9999; padding: 2rem; border-radius: 10px;
-                    background-color: #ffffff; color: #000000;
-                    border: 2px solid #4CAF50; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-                    text-align: center; min-width: 350px;
-                }
-                .st-popup-container h4 { color: #4CAF50; font-size: 1.5rem; margin-bottom: 0.5rem; }
-            </style>
-        """, unsafe_allow_html=True)
-        
-        if message_type == "update_success":
-            title, message = "Update Successful! ✅", record_info.get('message', '')
-        elif message_type == "primary_success":
-            title = f"Primary {APP_CONFIG['affiliation_name']} Updated! ✅"
-            message = f"Primary set to ID: {record_info.get('affiliation_id')}."
-        else:
-            title, message = "Success! ✅", "Operation completed."
-            
-        st.markdown(f'<div class="st-popup-container"><h4>{title}</h4><p>{message}</p></div>', 
-                   unsafe_allow_html=True)
-
-    time.sleep(2)
-    st.session_state.show_popup = False
-    st.session_state.popup_message_info = None
-    st.rerun()
+def standardize_list(val):
+    """Ensure value is a list for display logic."""
+    if isinstance(val, list):
+        return val[0] if val else ""
+    return val
 
 # ============================================================================
 # CSS STYLES
@@ -401,32 +398,41 @@ def show_success_popup(popup_placeholder, message_type: str, record_info: dict):
 
 CUSTOM_CSS = """
 <style>
-    div[data-testid="stHorizontalBlock"]:has(div.cell-content),
-    div[data-testid="stHorizontalBlock"]:has(div.affiliation-cell) { 
-        border-bottom: 1px solid #e6e6e6; 
+    /* Table row styling */
+    .report-row {
+        border-bottom: 1px solid #e6e6e6;
+        padding: 0.5rem 0;
+        align-items: center;
     }
-    div[data-testid="stHorizontalBlock"]:has(div.cell-content):hover,
-    div[data-testid="stHorizontalBlock"]:has(div.affiliation-cell):hover { 
-        background-color: #f8f9fa; 
+    .report-row:hover {
+        background-color: #f8f9fa;
     }
-    .cell-content, .affiliation-cell { 
-        padding: 0.3rem 0.5rem; font-size: 14px; 
-        display: flex; align-items: center; height: 48px; 
+    .report-header {
+        font-weight: bold;
+        color: #4f4f4f;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #ccc;
+        margin-bottom: 0.5rem;
     }
-    .report-header, .affiliation-header { 
-        font-weight: bold; color: #4f4f4f; padding: 0.5rem; 
+    /* Proposed value highlighting */
+    .proposed-val {
+        color: #2E7D32; /* Green */
+        font-weight: 500;
+        background-color: #F1F8E9;
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid #C8E6C9;
     }
-    .affiliation-header { border-bottom: 2px solid #ccc; }
-    .report-proposed-column { 
-        border-left: 2px solid #D3D3D3; padding-left: 1.5rem; 
+    /* Cell alignment */
+    .cell-text {
+        font-size: 14px;
+        word-wrap: break-word;
     }
-    .checkbox-container { width: 100%; text-align: center; }
-    .checkbox-container div[data-testid="stCheckbox"] { padding-top: 12px; }
-    .affiliation-cell div[data-testid="stButton"] button { 
-        padding: 0.2rem 0.5rem; font-size: 12px; height: 30px; 
+    /* Button fixes */
+    div[data-testid="stButton"] button {
+        height: auto;
+        padding: 4px 12px;
     }
-    .detail-key { font-weight: bold; color: #4F8BE7; margin-top: 0.5rem; }
-    .detail-value { padding-bottom: 0.5rem; }
 </style>
 """
 
@@ -454,78 +460,179 @@ def show_priority_dialog():
         <strong>Reason:</strong><br>{popup_data.get('reason', 'N/A')}
     </div>
     """, unsafe_allow_html=True)
-    
-    if st.button("Close", use_container_width=True):
-        st.session_state.show_reason_popup = False
-        st.session_state.reason_popup_data = None
-        st.rerun()
 
-def display_search_results(session, df: pd.DataFrame):
-    """Display search results table with selection."""
-    if df.empty:
-        st.info(f"No {APP_CONFIG['entity_name_plural'].lower()} found.", icon="ℹ️")
-        if st.button(f"🔍 Proceed with Web Search?", type="primary"):
-            create_empty_record_and_redirect()
+@st.dialog("⚠️ Confirm Updates")
+def show_confirm_update_dialog():
+    """Dialog to confirm changes before DB update."""
+    changes = st.session_state.get('pending_changes', [])
+    
+    if not changes:
+        st.info("No changes selected.")
+        if st.button("Close"):
+            st.session_state.show_confirm_dialog = False
+            st.rerun()
         return
-    
-    st.session_state.results_df = df
-    st.write("Select a record:")
-    
-    # Headers
-    cols = st.columns(SEARCH_RESULT_COL_SIZES)
-    for col_obj, header in zip(cols, ["Select"] + SEARCH_RESULT_COLUMNS[1:]):
-        col_obj.markdown(f"**{header}**")
-    
-    # Rows
-    for _, row in df.iterrows():
-        row_id = row.get("ID") or row.get(f"{APP_CONFIG['entity_name']}_ID") or _
-        is_selected = row_id == st.session_state.get("selected_entity_id")
-        row_cols = st.columns(SEARCH_RESULT_COL_SIZES)
-        
-        if is_selected:
-            row_cols[0].write("📘")
-        else:
-            if row_cols[0].button("", key=f"select_{row_id}"):
-                st.session_state.selected_entity_id = row_id
-                st.rerun()
-        
-        for i, col_name in enumerate(SEARCH_RESULT_COLUMNS[1:], 1):
-            db_col = ENTITY_COLUMNS.get(col_name, col_name.upper())
-            row_cols[i].write(get_safe_value(row, db_col))
 
-def display_selected_record(session, record):
-    """Display details for selected record."""
-    st.markdown(f"### Selected {APP_CONFIG['entity_name']} Details")
+    st.warning("Are you sure you want to apply these updates?", icon="⚠️")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**Name:** {get_safe_value(record, 'NAME')}")
-        st.markdown(f"**NPI:** {get_safe_value(record, 'NPI')}")
-        st.markdown(f"**Specialty:** {get_safe_value(record, 'SPECIALTY')}")
-    with col2:
-        st.markdown(f"**Address:** {get_safe_value(record, 'ADDRESS1')}")
-        city = get_safe_value(record, 'CITY')
-        state = get_safe_value(record, 'STATE')
-        zip_code = get_safe_value(record, 'ZIP')
-        st.markdown(f"**City, State ZIP:** {city}, {state} {zip_code}")
-    
-    st.divider()
-    
-    col_btn, _ = st.columns([0.25, 0.75])
-    with col_btn:
-        if st.button("Enrich with AI Assistant 🚀", type="primary"):
-            st.session_state.current_view = "enrichment_page"
+    # Simple table for changes
+    st.markdown("### Pending Changes")
+    for change in changes:
+        col1, col2, col3 = st.columns([1.5, 2, 2])
+        col1.markdown(f"**{change['field']}**")
+        col1.caption(f"ID: {change['id']}")
+        col2.markdown(f"*Current:* `{change['current']}`")
+        col3.markdown(f"*New:* :green[`{change['proposed']}`]")
+        st.markdown("---")
+        
+    col_submit, col_cancel = st.columns(2)
+    with col_submit:
+        if st.button("✅ Yes, Update Database", type="primary"):
+            # Update Logic Placeholder
+            # In a real app, perform SQL UPDATE here
+            st.toast("Updated successfully! (Simulation)", icon="💾")
+            st.session_state.show_confirm_dialog = False
+            st.session_state.pending_changes = []
+            st.rerun()
+            
+    with col_cancel:
+        if st.button("❌ Cancel"):
+            st.session_state.show_confirm_dialog = False
             st.rerun()
 
-def create_empty_record_and_redirect():
-    """Create empty record and redirect to enrichment."""
-    st.session_state.empty_record_for_enrichment = {
-        k: '' for k in ENTITY_COLUMNS.values()
-    }
-    st.session_state.web_search_query = st.session_state.get('last_prompt', '')
-    st.session_state.selected_entity_id = 'empty_record'
-    st.session_state.current_view = "enrichment_page"
-    st.rerun()
+def render_comparison_section(current_record: dict, proposed_data: dict, record_id: str):
+    """
+    Renders the demographic comparison table using config.
+    """
+    st.markdown("### 👤 Demographic Details")
+    
+    # Headers
+    headers = ["Field", "Current Value", "Proposed Value", "Source", "Update?"]
+    cols = st.columns(ENRICHMENT_CONFIG["demographics_col_sizes"])
+    for col_obj, header in zip(cols, headers):
+        col_obj.markdown(f"<div class='report-header'>{header}</div>", unsafe_allow_html=True)
+        
+    # Rows
+    for row_config in ENRICHMENT_CONFIG["demographics"]:
+        label = row_config["label"]
+        db_col = row_config["db_col"]
+        api_field = row_config["api_field"]
+        
+        current_val = get_safe_value(current_record, db_col)
+        
+        # Handle list vs string from API
+        proposed_raw = proposed_data.get(api_field, "")
+        proposed_val = standardize_list(proposed_raw)
+        
+        # Source formatting
+        source_display = "Web Search" # Simplify for template
+        
+        # Render Row
+        with st.container():
+            st.markdown('<div class="report-row">', unsafe_allow_html=True)
+            r_cols = st.columns(ENRICHMENT_CONFIG["demographics_col_sizes"])
+            
+            r_cols[0].markdown(f"**{label}**")
+            r_cols[1].markdown(f"<span class='cell-text'>{current_val}</span>", unsafe_allow_html=True)
+            
+            # Highlight if different
+            if str(current_val).strip() != str(proposed_val).strip() and proposed_val:
+                r_cols[2].markdown(f"<span class='proposed-val cell-text'>{proposed_val}</span>", unsafe_allow_html=True)
+            else:
+                r_cols[2].markdown(f"<span class='cell-text'>{proposed_val}</span>", unsafe_allow_html=True)
+                
+            r_cols[3].caption(source_display)
+            
+            # Checkbox for approval
+            checkbox_key = f"approve_{record_id}_{db_col}"
+            r_cols[4].checkbox("Approve", key=checkbox_key, label_visibility="collapsed")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+
+def render_affiliation_section(session, current_record: dict, proposed_affiliations: List[dict]):
+    """
+    Renders the affiliations table with priority ranking.
+    """
+    st.markdown(f"### 🏥 {APP_CONFIG['affiliation_name']} Affiliations")
+    
+    # Combine DB and Proposed Affiliations
+    all_affiliations = {}
+    
+    # 1. Existing DB Affiliations (Mock query wrapper)
+    hcp_npi = get_safe_value(current_record, "NPI")
+    if hcp_npi and hcp_npi != 'N/A':
+        # Placeholder for actual DB query
+        # db_affs = session.sql(f"SELECT ... WHERE NPI = '{hcp_npi}'").to_pandas()
+        pass
+
+    # 2. Add Proposed (AI) Affiliations
+    for item in proposed_affiliations:
+        # Flatten Pydantic/Dict structure
+        aff_id = standardize_list(item.get("Affiliation_ID", "N/A"))
+        key = aff_id if aff_id != "N/A" else f"new_{item.get('Affiliation_Name', [''])[0]}"
+        
+        all_affiliations[key] = {
+            "ID": aff_id,
+            "Name": standardize_list(item.get("Affiliation_Name")),
+            "Address": standardize_list(item.get("Affiliation_Address1")),
+            "City": standardize_list(item.get("Affiliation_City")),
+            "State": standardize_list(item.get("Affiliation_State")),
+            "ZIP": standardize_list(item.get("Affiliation_ZIP")),
+            "Source": "AI Found"
+        }
+
+    # Priority Analysis
+    if all_affiliations and st.button("🎯 Analyze Priority Order with AI"):
+        with st.spinner("Analyzing priorities..."):
+            # Prepare list for API
+            aff_list_for_api = [(k, v) for k, v in all_affiliations.items()]
+            rankings = get_affiliation_priorities(session, current_record, aff_list_for_api)
+            st.session_state.priority_rankings = rankings
+            st.rerun()
+
+    rankings = st.session_state.get('priority_rankings', {})
+
+    # Table Header
+    cols = st.columns(ENRICHMENT_CONFIG["affiliations_col_sizes"])
+    for col, header in zip(cols, ENRICHMENT_CONFIG["affiliations_headers"]):
+        col.markdown(f"**{header}**")
+        
+    st.markdown("---")
+
+    # Render Rows
+    # Sort by priority if available
+    sorted_items = sorted(
+        all_affiliations.items(),
+        key=lambda x: rankings.get(x[0], {}).get("priority", 999)
+    )
+
+    for key, data in sorted_items:
+        r_cols = st.columns(ENRICHMENT_CONFIG["affiliations_col_sizes"])
+        
+        # Status/Actions
+        r_cols[0].write("New") # simplified
+        r_cols[1].caption(data['Source'])
+        r_cols[2].write(data['ID'])
+        r_cols[3].write(data['Name'])
+        r_cols[4].write(data['Address'])
+        r_cols[5].write(data['City'])
+        r_cols[6].write(data['State'])
+        r_cols[7].write(data['ZIP'])
+        
+        # Priority
+        p_info = rankings.get(key, {})
+        r_cols[8].write(str(p_info.get("priority", "-")))
+        
+        # Details Button
+        if p_info and r_cols[9].button("ℹ️", key=f"reason_{key}"):
+            st.session_state.reason_popup_data = {
+                "affiliation_name": data['Name'],
+                "priority": p_info.get("priority"),
+                "reason": p_info.get("reason")
+            }
+            show_priority_dialog()
+            
+        st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 4px 0;'></div>", unsafe_allow_html=True)
 
 # ============================================================================
 # MAIN PAGE
@@ -534,7 +641,6 @@ def create_empty_record_and_redirect():
 def render_main_page(session):
     """Render the main search page."""
     st.title(f"🏥 {APP_CONFIG['page_title']}")
-    st.markdown(f"Search for {APP_CONFIG['entity_name_plural']} and manage {APP_CONFIG['affiliation_name'].lower()} affiliations.")
     
     # Search input
     with st.container(border=True):
@@ -552,8 +658,7 @@ def render_main_page(session):
             
             # Show interpretation
             if len(content) > 1 and content[1].get("type") == "text":
-                st.markdown(f'You searched: "{content[0].get("text", "")}"')
-                st.markdown(f'Interpretation: "{content[1].get("text", "")}"')
+                st.markdown(f'**Interpretation:** "{content[1].get("text", "")}"')
             
             # Search results
             with st.container(border=True):
@@ -564,70 +669,161 @@ def render_main_page(session):
                     if item["type"] == "sql":
                         sql_found = True
                         df = session.sql(item["statement"]).to_pandas()
-                        display_search_results(session, df)
+                        
+                        if df.empty:
+                            st.info("No records found in database.")
+                        else:
+                            st.session_state.results_df = df
+                            display_search_results(session, df)
                         break
                 
                 if not sql_found:
                     st.info("No SQL query returned. Try rephrasing your search.")
-                    if st.button("🔍 Proceed with Web Search?", type="primary"):
-                        create_empty_record_and_redirect()
             
-            # Selected record details
-            if st.session_state.get("selected_entity_id") and st.session_state.results_df is not None:
+            # Web Search Fallback Option
+            if not sql_found or (st.session_state.results_df is not None and st.session_state.results_df.empty):
                 st.markdown("---")
-                id_col = "ID" if "ID" in st.session_state.results_df.columns else f"{APP_CONFIG['entity_name']}_ID"
-                selected = st.session_state.results_df[
-                    st.session_state.results_df[id_col].astype(str) == str(st.session_state.selected_entity_id)
-                ]
-                if not selected.empty:
-                    display_selected_record(session, selected.iloc[0])
+                if st.button(f"🔍 Proceed with Web Search for '{st.session_state.last_prompt}'?", type="primary"):
+                    create_empty_record_and_redirect()
+
+def display_search_results(session, df: pd.DataFrame):
+    """Display search results table with selection."""
+    st.write("Select a record to enrich:")
+    
+    cols = st.columns(SEARCH_RESULT_COL_SIZES)
+    for col_obj, header in zip(cols, ["Select"] + SEARCH_RESULT_COLUMNS[1:]):
+        col_obj.markdown(f"**{header}**")
+    
+    for _, row in df.iterrows():
+        row_id = row.get("ID") or row.get(f"{APP_CONFIG['entity_name']}_ID")
+        is_selected = str(row_id) == str(st.session_state.get("selected_entity_id"))
+        
+        row_cols = st.columns(SEARCH_RESULT_COL_SIZES)
+        
+        if is_selected:
+            row_cols[0].write("✅")
+        else:
+            if row_cols[0].button("Select", key=f"select_{row_id}"):
+                st.session_state.selected_entity_id = row_id
+                st.rerun()
+        
+        for i, col_name in enumerate(SEARCH_RESULT_COLUMNS[1:], 1):
+            db_col = ENTITY_COLUMNS.get(col_name, col_name.upper())
+            row_cols[i].write(get_safe_value(row, db_col))
+
+    if st.session_state.get("selected_entity_id"):
+        st.markdown("---")
+        if st.button("Enrich Selected Record 🚀", type="primary"):
+            st.session_state.current_view = "enrichment_page"
+            st.rerun()
+
+def create_empty_record_and_redirect():
+    """Create empty record and redirect to enrichment."""
+    st.session_state.empty_record_for_enrichment = {
+        k: '' for k in ENTITY_COLUMNS.values()
+    }
+    st.session_state.web_search_query = st.session_state.get('last_prompt', '')
+    st.session_state.selected_entity_id = 'empty_record'
+    st.session_state.current_view = "enrichment_page"
+    st.rerun()
 
 # ============================================================================
-# ENRICHMENT PAGE (Placeholder - Implement as needed)
+# ENRICHMENT PAGE
 # ============================================================================
 
 def render_enrichment_page(session, selected_df):
-    """Render enrichment/comparison page."""
+    """Render the modular enrichment comparison page."""
+    
+    # 1. Navigation
     _, btn_col = st.columns([4, 1])
     with btn_col:
         if st.button("⬅️ Back to Search"):
             st.session_state.current_view = "main"
-            st.session_state.selected_entity_id = None
+            st.session_state.priority_rankings = {} 
             st.rerun()
-    
+
+    # 2. Styles and Dialogs
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-    st.markdown("### 🔒 Current vs. Proposed Comparison Report")
-    
-    # Show priority dialog if needed
-    if st.session_state.get('show_reason_popup'):
-        show_priority_dialog()
-    
+    if st.session_state.get('show_confirm_dialog'):
+        show_confirm_update_dialog()
+        
+    # 3. Data Preparation
     if selected_df.empty:
-        st.warning(f"No {APP_CONFIG['entity_name']} data provided.")
+        st.error("No record data available.")
         return
+
+    current_record = selected_df.iloc[0].to_dict()
+    record_id = get_safe_value(current_record, "ID", "")
     
-    # Get enriched data
+    # 4. Fetch Enriched Data
     @st.cache_data(ttl=600)
-    def get_enriched_data(_session, entity_df, search_query=None):
-        if entity_df.empty:
-            return {}
+    def get_enriched_data(_session, record_dict, search_query=None):
         try:
-            return search_entity_web(
-                entity_df.iloc[0].to_dict(),
-                search_query=search_query
-            )
+            return search_entity_web(record_dict, search_query=search_query)
         except Exception as e:
             st.error(f"Enrichment error: {e}")
-            return {}
-    
+            return None
+
     with st.spinner(f"🔍 Searching web for {APP_CONFIG['entity_name']} info..."):
         search_query = st.session_state.get('web_search_query')
-        api_response = get_enriched_data(session, selected_df, search_query)
+        api_response = get_enriched_data(session, current_record, search_query)
+
+    if not api_response:
+        st.warning("Could not retrieve data from web search.")
+        return
+
+    # Extract data parts
+    # The API returns nested dicts: {'entity_data': {...}, 'affiliation_data': {...}}
+    proposed_entity = api_response.get("entity_data", {})
+    # Note: affiliation_data is returned as an object with lists in the template's model. 
+    # We need to transpose this for the table if it's column-oriented, or handle list of dicts.
+    # The Pydantic model "AffiliationData" is column-oriented (List[str]).
+    # We will assume column-oriented and transpose for display.
+    raw_aff_data = api_response.get("affiliation_data", {})
+    proposed_affiliations = []
     
-    if api_response:
-        st.success(f"✅ Found enriched data for {APP_CONFIG['entity_name']}!")
-        # Add your comparison UI logic here
-        st.info("Implement comparison UI with demographic and affiliation sections")
+    # Simple transpose logic for AffiliationData model
+    if raw_aff_data and "Affiliation_ID" in raw_aff_data:
+        count = len(raw_aff_data["Affiliation_ID"])
+        for i in range(count):
+            row = {}
+            for key, val_list in raw_aff_data.items():
+                if isinstance(val_list, list) and len(val_list) > i:
+                    row[key] = val_list[i]
+                else:
+                    row[key] = ""
+            proposed_affiliations.append(row)
+
+    # 5. Render Components
+    st.title("📑 Comparison Report")
+    st.info(f"Comparing Database Record (ID: {record_id}) vs. Web Search Results")
+    
+    with st.container(border=True):
+        render_comparison_section(current_record, proposed_entity, record_id)
+        
+        # Global Update Button for Demographics
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("💾 Update Selected Fields", type="primary"):
+            # Gather changes
+            changes = []
+            for row in ENRICHMENT_CONFIG["demographics"]:
+                key = f"approve_{record_id}_{row['db_col']}"
+                if st.session_state.get(key, False):
+                    changes.append({
+                        "field": row['label'],
+                        "id": record_id,
+                        "current": get_safe_value(current_record, row['db_col']),
+                        "proposed": standardize_list(proposed_entity.get(row['api_field']))
+                    })
+            
+            st.session_state.pending_changes = changes
+            st.session_state.show_confirm_dialog = True
+            st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    with st.container(border=True):
+        render_affiliation_section(session, current_record, proposed_affiliations)
 
 # ============================================================================
 # APPLICATION ENTRY POINT
@@ -642,11 +838,9 @@ SESSION_DEFAULTS = {
     "selected_entity_id": None,
     "current_view": "main",
     "last_prompt": None,
-    "show_popup": False,
-    "popup_message_info": None,
-    "show_reason_popup": False,
-    "reason_popup_data": None,
-    "priority_rankings_cache": {},
+    "priority_rankings": {},
+    "show_confirm_dialog": False,
+    "pending_changes": []
 }
 
 for key, default in SESSION_DEFAULTS.items():
@@ -655,33 +849,24 @@ for key, default in SESSION_DEFAULTS.items():
 # Get session
 session = get_snowflake_session()
 
-# Route to appropriate page
+# Router
 if st.session_state.current_view == "main":
     render_main_page(session)
+
 elif st.session_state.current_view == "enrichment_page":
-    popup_placeholder = st.empty()
-    
-    if st.session_state.show_popup:
-        show_success_popup(
-            popup_placeholder, 
-            st.session_state.popup_message_info['type'], 
-            st.session_state.popup_message_info
-        )
-    
-    # Handle empty record or selected record
+    # Handle empty vs selected record
     if st.session_state.selected_entity_id == 'empty_record':
         empty_df = pd.DataFrame([st.session_state.get('empty_record_for_enrichment', {})])
-        if not st.session_state.show_popup:
-            render_enrichment_page(session, empty_df)
+        render_enrichment_page(session, empty_df)
     elif st.session_state.selected_entity_id and st.session_state.results_df is not None:
+        # Filter for selected ID safely
         id_col = "ID" if "ID" in st.session_state.results_df.columns else f"{APP_CONFIG['entity_name']}_ID"
         selected_df = st.session_state.results_df[
             st.session_state.results_df[id_col].astype(str) == str(st.session_state.selected_entity_id)
         ]
-        if not st.session_state.show_popup:
-            render_enrichment_page(session, selected_df)
+        render_enrichment_page(session, selected_df)
     else:
-        st.warning(f"Select a {APP_CONFIG['entity_name']} record first.")
-        if st.button("Back to Main"):
+        st.warning("No record selected.")
+        if st.button("Return to Search"):
             st.session_state.current_view = "main"
             st.rerun()
