@@ -538,8 +538,6 @@ def display_search_results(session, df: pd.DataFrame):
     for col_obj, header in zip(cols, ["Select"] + SEARCH_RESULT_COLUMNS[1:]):
         col_obj.markdown(f"**{header}**")
     
-    st.divider()
-
     for _, row in df.iterrows():
         row_id = row.get("ID") or row.get(f"{APP_CONFIG['entity_name']}_ID")
         is_selected = str(row_id) == str(st.session_state.get("selected_entity_id"))
