@@ -114,6 +114,28 @@ ENRICHMENT_PAGE_TABLES_CONFIG = {
     "affiliations_col_sizes": (0.8, 1, 1, 2.5, 2, 1.2, 0.6, 0.8, 0.8, 0.8),
 }
 
+# Priority Analysis Configuration - Define key mappings for LLM ranking
+# Maps logical field names to actual keys in your data structures
+PRIORITY_ANALYSIS_CONFIG = {
+    # Entity (HCP/Doctor) field mappings - keys to try in order
+    "entity_fields": {
+        "name": "NAME",
+        "address": "ADDRESS1",
+        "city": "CITY",
+        "state": "STATE",
+        "zip": "ZIP",
+    },
+    # Affiliation (Hospital) field mappings - keys to try in order
+    "affiliation_fields": {
+        "name": "Name",
+        "address": "Address",
+        "city": "City",
+        "state": "State",
+        "zip": "ZIP",
+        "source": "Source",
+    },
+}
+
 # Cortex Analyst Configuration
 CORTEX_CONFIG = {
     "database": st.secrets["snowflake"]["database"],
@@ -228,27 +250,35 @@ def get_affiliation_priorities(session, entity_data: dict, affiliations: List[Tu
     entity_type = entity_type or APP_CONFIG['entity_name'].lower()
     affiliation_type = affiliation_type or APP_CONFIG['affiliation_name'].lower()
     
-    # Build prompt
+    # Helper to get value using config-defined key
+    def get_field(data: dict, field_type: str, field_name: str, default: str = 'N/A') -> str:
+        config_key = PRIORITY_ANALYSIS_CONFIG[field_type].get(field_name)
+        if config_key:
+            val = data.get(config_key)
+            if val and str(val).strip():
+                return str(val)
+        return default
+    
+    # Build prompt using config-driven field mappings
     entity_info = f"""
 Selected {entity_type.title()}:
-- Name: {entity_data.get('Name', 'N/A')}
-- Address: {entity_data.get('Address Line1', '')} {entity_data.get('Address Line2', '')}
-- City: {entity_data.get('City', 'N/A')}
-- State: {entity_data.get('State', 'N/A')}
-- ZIP: {entity_data.get('ZIP', 'N/A')}
+- Name: {get_field(entity_data, 'entity_fields', 'name')}
+- Address: {get_field(entity_data, 'entity_fields', 'address')}
+- City: {get_field(entity_data, 'entity_fields', 'city')}
+- State: {get_field(entity_data, 'entity_fields', 'state')}
+- ZIP: {get_field(entity_data, 'entity_fields', 'zip')}
 """
     
     affiliations_info = ""
     for idx, (key, aff) in enumerate(affiliations):
-        aff_name = aff.get('Affiliation_Name', aff.get('HOSPITAL_NAME', 'N/A'))
-        aff_addr = aff.get('Affiliation_Address', aff.get('HOSPITAL_ADDRESS', 'N/A'))
-        aff_city = aff.get('Affiliation_City', aff.get('HOSPITAL_CITY', 'N/A'))
-        
         affiliations_info += f"""
 {affiliation_type.title()} {idx + 1} (Key: {key}):
-- Name: {aff_name}
-- Address: {aff_addr}, {aff_city}
-- Source: {aff.get('SOURCE', 'N/A')}
+- Name: {get_field(aff, 'affiliation_fields', 'name')}
+- Address: {get_field(aff, 'affiliation_fields', 'address')}
+- City: {get_field(aff, 'affiliation_fields', 'city')}
+- State: {get_field(aff, 'affiliation_fields', 'state')}
+- ZIP: {get_field(aff, 'affiliation_fields', 'zip')}
+- Source: {get_field(aff, 'affiliation_fields', 'source')}
 """
     
     prompt = f"""You are a healthcare data analyst. Rank each {affiliation_type} by priority (1=highest) based on:
