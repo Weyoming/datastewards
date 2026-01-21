@@ -518,17 +518,22 @@ def render_enrichment_page(session, selected_hco_df):
         if not all_affiliations:
             st.info("No HCO affiliations were found.")
         else:
-            sorted_affiliations = sorted(
-                all_affiliations.items(),
-                key=lambda item: (
-                    hco_id != "N/A" and
-                    true_primary_hco_id is not None and
-                    int(item[0]) == true_primary_hco_id
-                ),
-                reverse=True
-            )
-            
-            for hco_id, hco_data in sorted_affiliations:
+            with st.spinner("Getting Priorities from AI..."):
+                # Send the selected_hco_df along with all sorted_affiliations to snowflake cortex LLM to get the priority order
+                # If multiple affiliations are there snowflake should assign priorities to each of them based on the closest
+                # match with address and name with the selected_hco_df 
+
+                sorted_affiliations = sorted(
+                    all_affiliations.items(),
+                    key=lambda item: (
+                        hco_id != "N/A" and
+                        true_primary_hco_id is not None and
+                        int(item[0]) == true_primary_hco_id
+                    ),
+                    reverse=True
+                )
+                
+                for hco_id, hco_data in sorted_affiliations:
                 row_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5, 1.5, 1.5])
                 
                 is_primary = hco_id != "N/A" and true_primary_hco_id is not None and int(hco_id) == true_primary_hco_id
