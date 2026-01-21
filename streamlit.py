@@ -467,8 +467,8 @@ def render_enrichment_page(session, selected_hco_df):
     
     with st.expander(hco_affiliation_title, expanded=False):
         
-        hco_headers = ["Status", "SOURCE", "HCP NPI", "HCO ID", "HCO NAME", "HCO ADDRESS", "HCO CITY", "HCO STATE", "HCO ZIP"]
-        header_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5, 1.5])
+        hco_headers = ["Status", "SOURCE", "HCP NPI", "HCO ID", "HCO NAME", "HCO ADDRESS", "HCO CITY", "HCO STATE", "HCO ZIP", "Priority"]
+        header_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5, 1.5, 1.5])
         for col_obj, header_name in zip(header_cols, hco_headers):
             col_obj.markdown(f"**{header_name}**")
         
@@ -529,7 +529,7 @@ def render_enrichment_page(session, selected_hco_df):
             )
             
             for hco_id, hco_data in sorted_affiliations:
-                row_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5, 1.5])
+                row_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5, 1.5, 1.5])
                 
                 is_primary = hco_id != "N/A" and true_primary_hco_id is not None and int(hco_id) == true_primary_hco_id
                 
