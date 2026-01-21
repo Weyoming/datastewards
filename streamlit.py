@@ -473,7 +473,13 @@ def render_enrichment_page(session, selected_hco_df):
         st.error("One of the dataframes is invalid. Please check the data source.")
         st.stop()
 
-    selected_id = int(current_df['ID'].iloc[0])
+    # Handle ID - may be 'N/A' for empty record flow
+    raw_id = current_df['ID'].iloc[0]
+    try:
+        selected_id = int(raw_id) if raw_id != 'N/A' and pd.notna(raw_id) else 'N/A'
+    except (ValueError, TypeError):
+        selected_id = 'N/A'
+    
     current_record = current_df.iloc[0]
     proposed_hcp_data_record = proposed_hcp_data_df.iloc[0]
 
@@ -492,9 +498,10 @@ def render_enrichment_page(session, selected_hco_df):
             break
     #end of session state for proposed record
 
-    #st.header(f"Comparing for ID: {selected_id} | {current_record.get('Name', '')} | NPI: {current_record.get('NPI', 'N/A')}")
+    # Display header - handle empty record case
+    display_name = current_record.get('Name', '') or current_record.get('NAME', '') or 'New Record (Web Search)'
     st.markdown(
-        f"<h5>Comparing for ID: {selected_id} | {current_record.get('Name', '')}</h5>", 
+        f"<h5>Comparing for ID: {selected_id} | {display_name}</h5>", 
         unsafe_allow_html=True
     )
 
