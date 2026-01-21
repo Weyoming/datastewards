@@ -37,8 +37,7 @@ def get_snowflake_session():
 
 def get_affiliation_priorities_from_llm(session, selected_hco_data: dict, affiliations: list) -> dict:
     """
-    Calls Snowflake Cortex LLM to rank HCO affiliations by priority based on 
-    how closely they match the selected HCO's address and name.
+    Calls Snowflake Cortex REST API with structured JSON output to rank HCO affiliations by priority.
     
     Returns a dict mapping affiliation key to {"priority": int, "reason": str}
     """
@@ -88,23 +87,70 @@ Return your response as a valid JSON object with this exact structure:
 Only return the JSON object, no other text. Use the exact keys provided for each affiliation."""
 
     try:
-        # Use Claude 3.5 Sonnet via Snowflake Cortex
-        response = Complete(
-            model="claude-3-5-sonnet",
-            prompt=prompt,
-            session=session
-        )
+        # Use Snowflake Cortex REST API with structured JSON output
+        account = st.secrets["snowflake"]["account"]
+        account_url = account.replace("_", "-").replace(".", "-")
+        api_url = f"https://{account_url}.snowflakecomputing.com/api/v2/cortex/inference:complete"
         
-        # Parse the JSON response
-        response_text = response.strip()
-        # Handle potential markdown code blocks
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-        response_text = response_text.strip()
+        # Get token from session
+        token = session.connection.rest.token
         
-        result = json.loads(response_text)
+        headers = {
+            "Authorization": f"Snowflake Token=\"{token}\"",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        
+        # Define JSON schema for structured output
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "rankings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string"},
+                            "priority": {"type": "number"},
+                            "reason": {"type": "string"}
+                        },
+                        "required": ["key", "priority", "reason"]
+                    }
+                }
+            },
+            "required": ["rankings"]
+        }
+        
+        request_body = {
+            "model": "claude-3-5-sonnet",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 4096,
+            "response_format": {
+                "type": "json",
+                "schema": json_schema
+            }
+        }
+        
+        resp = requests.post(api_url, headers=headers, json=request_body, timeout=60)
+        
+        if resp.status_code >= 400:
+            raise Exception(f"API request failed with status {resp.status_code}: {resp.text}")
+        
+        # Parse streaming response - collect all content
+        response_text = ""
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data: "):
+                try:
+                    data = json.loads(line[6:])
+                    if "choices" in data and len(data["choices"]) > 0:
+                        delta = data["choices"][0].get("delta", {})
+                        content = delta.get("content", "")
+                        response_text += content
+                except json.JSONDecodeError:
+                    continue
+        
+        # Parse the structured JSON response
+        result = json.loads(response_text.strip())
         
         # Convert to a dictionary keyed by affiliation key
         priority_map = {}
