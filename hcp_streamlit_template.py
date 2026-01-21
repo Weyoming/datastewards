@@ -69,7 +69,7 @@ SEARCH_RESULT_COL_SIZES = (0.8, 2, 1.2, 1.5, 1.2, 0.8)
 CORTEX_CONFIG = {
     "database": st.secrets["snowflake"]["database"],
     "schema": st.secrets["snowflake"]["schema"], 
-    "stage": "YOUR_STAGE",
+    "stage": st.secrets["snowflake"]["semantic_model_stage"],
     "semantic_model_file": st.secrets["snowflake"]["semantic_model_file"],
 }
 
@@ -150,14 +150,12 @@ def send_cortex_message(session, prompt: str) -> dict:
         "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
         "semantic_model_file": f"@{CORTEX_CONFIG['database']}.{CORTEX_CONFIG['schema']}.{CORTEX_CONFIG['stage']}/{CORTEX_CONFIG['semantic_model_file']}",
     }
-
+    
     resp = requests.post(api_url, headers=headers, json=request_body, timeout=30)
     
     if resp.status_code < 400:
         return resp.json()
-    else:
-        st.error(f"Failed request with status {resp.status_code}: {resp.text}")    
-        # raise Exception(f"Failed request with status {resp.status_code}: {resp.text}")
+    raise Exception(f"Failed request with status {resp.status_code}: {resp.text}")
 
 def process_cortex_message(session, prompt: str):
     """Process user message and update session state."""
