@@ -649,12 +649,22 @@ def render_enrichment_page(session, selected_hco_df):
             else:
                 # Get LLM-based priority rankings for affiliations (only if not cached)
                 affiliations_list = list(all_affiliations.items())
-                with st.spinner("🤖 Analyzing affiliations with AI..."):
+                
+                # Show prominent status message
+                status_placeholder = st.empty()
+                status_placeholder.info("🤖 **AI Analysis in Progress**\n\nSending affiliation data to LLM to determine priority order and reasoning...")
+                
+                with st.spinner("⏳ Fetching priority rankings and reasons from AI..."):
                     priority_rankings = get_affiliation_priorities_from_llm(
                         session, 
                         current_data_dict, 
                         affiliations_list
                     )
+                
+                # Clear the status message after completion
+                status_placeholder.empty()
+                st.toast("✅ AI analysis complete! Affiliations ranked by priority.", icon="🎯")
+                
                 # Cache the results
                 st.session_state.priority_rankings_cache[cache_key] = priority_rankings
             
