@@ -255,23 +255,78 @@ def render_enrichment_page(session, selected_hco_df):
     # Placeholder for a potential dialog to display over the main content
     dialog_placeholder = st.empty()
     
-    # Placeholder for reason popup
-    reason_popup_placeholder = st.empty()
-    
-    # Render reason popup if the state is set
+    # Render reason popup as a modal overlay if the state is set
     if st.session_state.get('show_reason_popup'):
-        with reason_popup_placeholder.container():
-            popup_data = st.session_state.get('reason_popup_data', {})
-            st.info(f"**Priority Reasoning for: {popup_data.get('hco_name', 'Unknown')}**")
-            st.markdown(f"""
-            **Priority:** {popup_data.get('priority', '-')}
-            
-            **Reason:** {popup_data.get('reason', 'No reason available')}
-            """)
-            if st.button("Close", key="close_reason_popup"):
-                st.session_state.show_reason_popup = False
-                st.session_state.reason_popup_data = None
-                st.rerun()
+        popup_data = st.session_state.get('reason_popup_data', {})
+        
+        # Modal overlay styling
+        st.markdown("""
+            <style>
+            .reason-modal-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+                z-index: 9998;
+            }
+            .reason-modal {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background-color: white;
+                padding: 2rem;
+                border-radius: 10px;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+                z-index: 9999;
+                max-width: 500px;
+                width: 90%;
+            }
+            .reason-modal h3 {
+                margin-top: 0;
+                color: #1f77b4;
+                border-bottom: 2px solid #1f77b4;
+                padding-bottom: 0.5rem;
+            }
+            .reason-modal .priority-badge {
+                display: inline-block;
+                background-color: #4CAF50;
+                color: white;
+                padding: 0.25rem 0.75rem;
+                border-radius: 15px;
+                font-weight: bold;
+                margin-bottom: 1rem;
+            }
+            .reason-modal .reason-text {
+                background-color: #f8f9fa;
+                padding: 1rem;
+                border-radius: 5px;
+                border-left: 4px solid #1f77b4;
+                margin-bottom: 1rem;
+            }
+            </style>
+            <div class="reason-modal-overlay"></div>
+            <div class="reason-modal">
+                <h3>🎯 Priority Reasoning</h3>
+                <p><strong>Organization:</strong> {hco_name}</p>
+                <p><span class="priority-badge">Priority {priority}</span></p>
+                <div class="reason-text">
+                    <strong>Reason:</strong><br>{reason}
+                </div>
+            </div>
+        """.format(
+            hco_name=popup_data.get('hco_name', 'Unknown'),
+            priority=popup_data.get('priority', '-'),
+            reason=popup_data.get('reason', 'No reason available')
+        ), unsafe_allow_html=True)
+        
+        # Close button
+        if st.button("✕ Close", key="close_reason_popup"):
+            st.session_state.show_reason_popup = False
+            st.session_state.reason_popup_data = None
+            st.rerun()
     
     # Render confirmation dialog if the state is set
     if st.session_state.get('show_confirm_dialog'):
