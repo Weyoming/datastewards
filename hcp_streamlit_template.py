@@ -155,8 +155,9 @@ def send_cortex_message(session, prompt: str) -> dict:
     
     if resp.status_code < 400:
         return resp.json()
-    else:    
-        raise Exception(f"Failed request with status {resp.status_code}: {resp.text}")
+    else:
+        st.error(f"Failed request with status {resp.status_code}: {resp.text}")    
+        # raise Exception(f"Failed request with status {resp.status_code}: {resp.text}")
 
 def process_cortex_message(session, prompt: str):
     """Process user message and update session state."""
