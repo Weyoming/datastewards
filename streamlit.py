@@ -264,14 +264,14 @@ def render_enrichment_page(session, selected_hco_df):
 
     # --- API Data Enrichment Function ---
     @st.cache_data(ttl=600)
-    def get_enriched_data_from_api(_session, hcp_df):
+    def get_enriched_data_from_api(_session, hcp_df, search_query=None):
         if hcp_df.empty:
             return pd.DataFrame()
     
         selected_record = hcp_df.iloc[0].to_dict()
 
         try:
-            api_response = get_consolidated_data_for_hco(selected_record, model_name="sonar-pro", use_pro_search=True)
+            api_response = get_consolidated_data_for_hco(selected_record, model_name="sonar-pro", use_pro_search=True, search_query=search_query)
             return api_response
         
         except Exception as e:
@@ -506,8 +506,9 @@ def render_enrichment_page(session, selected_hco_df):
     #end of Placeholder for a potential dialog to display over the main content
 
     with st.spinner("🚀 Contacting AI Assistant for Data Enrichment..."):
-        # proposed_df = get_enriched_data_from_api(session, selected_hco_df)
-        api_response = get_enriched_data_from_api(session, selected_hco_df)
+        # Get user's search query for web search flow (when no record exists in DB)
+        user_search_query = st.session_state.get('web_search_query', None)
+        api_response = get_enriched_data_from_api(session, selected_hco_df, search_query=user_search_query)
         proposed_hcp_data_df = pd.DataFrame(api_response['hco_data'])
         proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hco_affiliation_data'])
 
@@ -1232,7 +1233,7 @@ class SearchResponse(BaseModel):
     hco_affiliation_data: HCOAffiliationData
     
 
-def get_consolidated_data_for_hco(hco_data, model_name="sonar", use_pro_search=False):
+def get_consolidated_data_for_hco(hco_data, model_name="sonar", use_pro_search=False, search_query=None):
     # Extract key info for better search - handle both dict and pandas Series
     if hasattr(hco_data, 'to_dict'):
         hco_data = hco_data.to_dict()
@@ -1246,7 +1247,8 @@ def get_consolidated_data_for_hco(hco_data, model_name="sonar", use_pro_search=F
             return val
         return str(hco_data)
     
-    hco_name = get_hco_val('NAME')
+    # Use search_query as the name if NAME field is empty (for Web Search flow)
+    hco_name = get_hco_val('NAME') or search_query or ''
     hco_address1 = get_hco_val('ADDRESS1')
     hco_address2 = get_hco_val('ADDRESS2')
     hco_city = get_hco_val('CITY')
