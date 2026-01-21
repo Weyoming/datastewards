@@ -7,6 +7,7 @@ import streamlit as st
 from snowflake.core import Root
 from snowflake.snowpark import Session
 from snowflake.snowpark.functions import col
+from snowflake.cortex import Complete
 from urllib.parse import urlparse
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -32,6 +33,93 @@ def get_snowflake_session():
         "role": st.secrets["snowflake"]["role"],
     }
     return Session.builder.configs(connection_parameters).create()
+
+
+def get_affiliation_priorities_from_llm(session, selected_hco_data: dict, affiliations: list) -> dict:
+    """
+    Calls Snowflake Cortex LLM to rank HCO affiliations by priority based on 
+    how closely they match the selected HCO's address and name.
+    
+    Returns a dict mapping affiliation key to {"priority": int, "reason": str}
+    """
+    if not affiliations:
+        return {}
+    
+    # Build the prompt for the LLM
+    selected_info = f"""
+Selected Healthcare Organization:
+- Name: {selected_hco_data.get('Name', 'N/A')}
+- Address: {selected_hco_data.get('Address Line1', '')} {selected_hco_data.get('Address Line2', '')}
+- City: {selected_hco_data.get('City', 'N/A')}
+- State: {selected_hco_data.get('State', 'N/A')}
+- ZIP: {selected_hco_data.get('ZIP', 'N/A')}
+"""
+    
+    affiliations_info = "Affiliations to rank:\n"
+    for idx, (key, aff) in enumerate(affiliations):
+        affiliations_info += f"""
+Affiliation {idx + 1} (Key: {key}):
+- HCO Name: {aff.get('HCO NAME', 'N/A')}
+- HCO Address: {aff.get('HCO ADDRESS', 'N/A')}
+- HCO City: {aff.get('HCO CITY', 'N/A')}
+- HCO State: {aff.get('HCO STATE', 'N/A')}
+- HCO ZIP: {aff.get('HCO ZIP', 'N/A')}
+- Source: {aff.get('SOURCE', 'N/A')}
+"""
+    
+    prompt = f"""You are a healthcare data analyst. Analyze the following selected healthcare organization and its potential affiliations. 
+Rank each affiliation by priority (1 being highest priority/best match) based on:
+1. Geographic proximity (same city, state, ZIP code area)
+2. Name similarity or relationship (parent organization, same health system)
+3. Address proximity
+
+{selected_info}
+
+{affiliations_info}
+
+Return your response as a valid JSON object with this exact structure:
+{{
+    "rankings": [
+        {{"key": "affiliation_key", "priority": 1, "reason": "Brief explanation of why this is priority 1"}},
+        {{"key": "affiliation_key", "priority": 2, "reason": "Brief explanation of why this is priority 2"}}
+    ]
+}}
+
+Only return the JSON object, no other text. Use the exact keys provided for each affiliation."""
+
+    try:
+        # Use Claude 3.5 Sonnet via Snowflake Cortex
+        response = Complete(
+            model="claude-3-5-sonnet",
+            prompt=prompt,
+            session=session
+        )
+        
+        # Parse the JSON response
+        response_text = response.strip()
+        # Handle potential markdown code blocks
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+        response_text = response_text.strip()
+        
+        result = json.loads(response_text)
+        
+        # Convert to a dictionary keyed by affiliation key
+        priority_map = {}
+        for ranking in result.get("rankings", []):
+            priority_map[str(ranking["key"])] = {
+                "priority": ranking["priority"],
+                "reason": ranking["reason"]
+            }
+        return priority_map
+        
+    except Exception as e:
+        st.warning(f"Could not get LLM priority ranking: {e}")
+        # Return default priorities if LLM fails
+        return {str(key): {"priority": idx + 1, "reason": "Default ordering (LLM unavailable)"} 
+                for idx, (key, _) in enumerate(affiliations)}
 
 
 # Set page to wide layout
@@ -166,6 +254,24 @@ def render_enrichment_page(session, selected_hco_df):
 
     # Placeholder for a potential dialog to display over the main content
     dialog_placeholder = st.empty()
+    
+    # Placeholder for reason popup
+    reason_popup_placeholder = st.empty()
+    
+    # Render reason popup if the state is set
+    if st.session_state.get('show_reason_popup'):
+        with reason_popup_placeholder.container():
+            popup_data = st.session_state.get('reason_popup_data', {})
+            st.info(f"**Priority Reasoning for: {popup_data.get('hco_name', 'Unknown')}**")
+            st.markdown(f"""
+            **Priority:** {popup_data.get('priority', '-')}
+            
+            **Reason:** {popup_data.get('reason', 'No reason available')}
+            """)
+            if st.button("Close", key="close_reason_popup"):
+                st.session_state.show_reason_popup = False
+                st.session_state.reason_popup_data = None
+                st.rerun()
     
     # Render confirmation dialog if the state is set
     if st.session_state.get('show_confirm_dialog'):
@@ -467,8 +573,8 @@ def render_enrichment_page(session, selected_hco_df):
     
     with st.expander(hco_affiliation_title, expanded=False):
         
-        hco_headers = ["Status", "SOURCE", "HCP NPI", "HCO ID", "HCO NAME", "HCO ADDRESS", "HCO CITY", "HCO STATE", "HCO ZIP", "Priority"]
-        header_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5, 1.5, 1.5])
+        hco_headers = ["Status", "SOURCE", "HCP NPI", "HCO ID", "HCO NAME", "HCO ADDRESS", "HCO CITY", "HCO STATE", "HCO ZIP", "Priority", "Reason"]
+        header_cols = st.columns([1.5, 1.5, 1.2, 1.2, 2.5, 2, 1.2, 1.2, 1.2, 0.8, 1])
         for col_obj, header_name in zip(header_cols, hco_headers):
             col_obj.markdown(f"**{header_name}**")
         
@@ -518,23 +624,35 @@ def render_enrichment_page(session, selected_hco_df):
         if not all_affiliations:
             st.info("No HCO affiliations were found.")
         else:
-            # Send the selected_hco_df along with all sorted_affiliations to snowflake cortex LLM to get the priority order
-            # If multiple affiliations are there snowflake should assign priorities to each of them based on the closest
-            # match with address and name with the selected_hco_df 
+            # Get LLM-based priority rankings for affiliations
+            affiliations_list = list(all_affiliations.items())
+            with st.spinner("🤖 Analyzing affiliations with AI..."):
+                priority_rankings = get_affiliation_priorities_from_llm(
+                    session, 
+                    current_data_dict, 
+                    affiliations_list
+                )
+            
+            # Store priority rankings in session state for popup access
+            if 'priority_reasons' not in st.session_state:
+                st.session_state.priority_reasons = {}
+            st.session_state.priority_reasons = priority_rankings
+            
+            # Sort affiliations by LLM priority (lower priority number = higher rank)
             sorted_affiliations = sorted(
                 all_affiliations.items(),
-                key=lambda item: (
-                    hco_id != "N/A" and
-                    true_primary_hco_id is not None and
-                    int(item[0]) == true_primary_hco_id
-                ),
-                reverse=True
+                key=lambda item: priority_rankings.get(str(item[0]), {}).get("priority", 999)
             )
             
             for hco_id, hco_data in sorted_affiliations:
-                row_cols = st.columns([1.5, 2, 1.5, 1.5, 2.5, 2, 1.5, 1.5, 1.5, 1.5])
+                # Match header columns: 11 columns total
+                row_cols = st.columns([1.5, 1.5, 1.2, 1.2, 2.5, 2, 1.2, 1.2, 1.2, 0.8, 1])
                 
-                is_primary = hco_id != "N/A" and true_primary_hco_id is not None and int(hco_id) == true_primary_hco_id
+                is_primary = False
+                try:
+                    is_primary = hco_id != "N/A" and true_primary_hco_id is not None and int(hco_id) == true_primary_hco_id
+                except (ValueError, TypeError):
+                    pass
                 
                 with row_cols[0]:
                     if is_primary:
@@ -565,6 +683,22 @@ def render_enrichment_page(session, selected_hco_df):
                 row_cols[6].write(hco_data.get("HCO CITY", ""))
                 row_cols[7].write(hco_data.get("HCO STATE", ""))
                 row_cols[8].write(hco_data.get("HCO ZIP", ""))
+                
+                # Priority column
+                priority_info = priority_rankings.get(str(hco_id), {"priority": "-", "reason": "N/A"})
+                row_cols[9].write(str(priority_info.get("priority", "-")))
+                
+                # Reason button column - shows popup with LLM reasoning
+                with row_cols[10]:
+                    reason_key = f"reason_{hco_id}"
+                    if st.button("ℹ️", key=reason_key, help="Click to see why this priority was assigned"):
+                        st.session_state.show_reason_popup = True
+                        st.session_state.reason_popup_data = {
+                            "hco_name": hco_data.get("HCO NAME", "Unknown"),
+                            "priority": priority_info.get("priority", "-"),
+                            "reason": priority_info.get("reason", "No reason available")
+                        }
+                        st.rerun()
 
     #----------end of provider_info_change
 
@@ -911,6 +1045,12 @@ if "show_confirm_dialog" not in st.session_state:
     st.session_state.show_confirm_dialog = False
 if "show_primary_confirm_dialog" not in st.session_state:
     st.session_state.show_primary_confirm_dialog = False
+if "show_reason_popup" not in st.session_state:
+    st.session_state.show_reason_popup = False
+if "reason_popup_data" not in st.session_state:
+    st.session_state.reason_popup_data = None
+if "priority_reasons" not in st.session_state:
+    st.session_state.priority_reasons = {}
 
 session = get_snowflake_session()
 os.environ["PERPLEXITY_API_KEY"] = st.secrets["perplexity"]["api_key"]
