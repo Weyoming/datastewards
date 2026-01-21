@@ -937,6 +937,32 @@ def render_main_page(session):
                             row_cols[5].write(row.get("STATE") or row.get("HCO_STATE", "N/A"))
                     else:
                         st.info("We couldn't find any records matching your search.", icon="ℹ️")
+                        st.markdown("")
+                        if st.button("🔍 Still want to proceed with Web Search?", type="primary"):
+                            # Create a default empty record for enrichment
+                            st.session_state.empty_record_for_enrichment = {
+                                'ID': 'N/A',
+                                'NAME': '',
+                                'NPI': '',
+                                'ADDRESS1': '',
+                                'ADDRESS2': '',
+                                'CITY': '',
+                                'STATE': '',
+                                'ZIP': '',
+                                'COUNTRY': '',
+                                'PRIMARY_AFFL_HCO_ACCOUNT_ID': None,
+                                'OUTLET_ID': None,
+                                'OUTLET_NAME': '',
+                                'OUTLET_ADDRESS1': '',
+                                'OUTLET_CITY': '',
+                                'OUTLET_STATE': '',
+                                'OUTLET_ZIP': ''
+                            }
+                            # Store the search query for web search context
+                            st.session_state.web_search_query = st.session_state.get('last_prompt', '')
+                            st.session_state.selected_hco_id = 'empty_record'
+                            st.session_state.current_view = "enrichment_page"
+                            st.rerun()
         if not sql_item_found:
             st.info("The assistant did not return a SQL query for this prompt. It may be a greeting or a clarifying question.")
 
@@ -1235,7 +1261,15 @@ elif st.session_state.current_view == "enrichment_page":
     if st.session_state.show_popup:
         show_popup_without_button(popup_placeholder, st.session_state.popup_message_info['type'], st.session_state.popup_message_info) 
 
-    if st.session_state.selected_hco_id and st.session_state.results_df is not None:
+    # Check if this is an empty record flow (from "Still want to proceed with Web Search?" button)
+    if st.session_state.selected_hco_id == 'empty_record' and st.session_state.get('empty_record_for_enrichment'):
+        # Create a DataFrame from the empty record
+        empty_record = st.session_state.empty_record_for_enrichment
+        selected_record_df = pd.DataFrame([empty_record])
+        
+        if not st.session_state.show_popup:
+            render_enrichment_page(session, selected_record_df)
+    elif st.session_state.selected_hco_id and st.session_state.results_df is not None:
         # Handle both ID and HCO_ID column names
         id_col = "ID" if "ID" in st.session_state.results_df.columns else "HCO_ID"
         selected_id_str = str(st.session_state.selected_hco_id)
