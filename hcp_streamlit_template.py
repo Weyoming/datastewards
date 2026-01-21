@@ -37,7 +37,6 @@ ENTITY_COLUMNS = {
     "ID": "ID",
     "Name": "NAME",
     "NPI": "NPI",
-    "Specialty": "SPECIALTY",
     "Address Line1": "ADDRESS1",
     "Address Line2": "ADDRESS2",
     "City": "CITY",
@@ -56,8 +55,8 @@ AFFILIATION_COLUMNS = {
 }
 
 # Search results table configuration
-SEARCH_RESULT_COLUMNS = ["ID", "Name", "NPI", "Specialty", "City", "State"]
-SEARCH_RESULT_COL_SIZES = (0.8, 2, 1.2, 1.5, 1.2, 0.8)
+SEARCH_RESULT_COLUMNS = ["ID", "Name", "NPI", "City", "State"]
+SEARCH_RESULT_COL_SIZES = (0.8, 2, 1.2, 1.2, 0.8)
 
 # Main Page Configuration
 MAIN_PAGE_TABLES_CONFIG = {
@@ -97,7 +96,6 @@ ENRICHMENT_PAGE_TABLES_CONFIG = {
     "demographics": [
         {"label": "Name", "db_col": "NAME", "key": "Name"},
         {"label": "NPI", "db_col": "NPI", "key": "NPI"},
-        {"label": "Specialty", "db_col": "SPECIALTY", "key": "Specialty"},
         {"label": "Address Line 1", "db_col": "ADDRESS1", "key": "Address Line1"},
         {"label": "Address Line 2", "db_col": "ADDRESS2", "key": "Address Line2"},
         {"label": "City", "db_col": "CITY", "key": "City"},
@@ -154,7 +152,6 @@ DATABASE_UPDATE_CONFIG = {
     "field_to_column_map": {
         "Name": "NAME",
         "NPI": "NPI",
-        "Specialty": "SPECIALTY",
         "Address Line1": "ADDRESS1",
         "Address Line2": "ADDRESS2",
         "City": "CITY",
@@ -181,7 +178,6 @@ class EntityData(BaseModel):
     ZIP: List[str]
     City: List[str]
     State: List[str]
-    Specialty: List[str] = []
     NPI: List[str] = []
 
 class AffiliationData(BaseModel):
