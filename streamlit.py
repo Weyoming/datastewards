@@ -1188,41 +1188,55 @@ def get_consolidated_data_for_hco(hco_data, model_name="sonar", use_pro_search=F
     hco_zip = get_hco_val('ZIP')
     
     user_query = f"""
-    Search the web for information about this US healthcare organization:
+    You are a healthcare data research specialist. Search the web thoroughly for information about this US healthcare organization:
     
-    Name: {hco_name}
-    Address Line 1: {hco_address1}
-    Address Line 2: {hco_address2}
-    City: {hco_city}
-    State: {hco_state}
-    ZIP: {hco_zip}
+    **Organization to Research:**
+    - Name: {hco_name}
+    - Address Line 1: {hco_address1}
+    - Address Line 2: {hco_address2}
+    - City: {hco_city}
+    - State: {hco_state}
+    - ZIP: {hco_zip}
 
-    Find and return:
+    **IMPORTANT INSTRUCTIONS:**
+    1. You MUST search the web and find COMPLETE information for ALL fields requested below
+    2. Do NOT return "N/A" for address fields if the organization exists - search harder to find the actual address
+    3. For parent organizations, search their official website, Wikipedia, or business directories to find their headquarters address
+    4. If you find a parent company name, you MUST also find and return their complete headquarters address
 
     **Part 1 - Health Care Organization Details (verify/update from web sources):**
-    - Name: Full name of the healthcare organization
-    - Address Line 1: Current Address Line 1
+    Search for the current, verified information about "{hco_name}":
+    - Name: Full official name of the healthcare organization
+    - Address Line 1: Street address (e.g., "123 Main Street")
     - Address Line 2: Suite/unit number (or empty string if none)
-    - City: City name in ALL CAPS
+    - City: City name in ALL CAPS (e.g., "CHARLOTTE")
     - State: 2-letter US state code (e.g., TX, CA, NY)
-    - ZIP: 5-digit zipcode
+    - ZIP: 5-digit zipcode (e.g., "28202")
 
     **Part 2 - Parent/Owning Healthcare Organization Details:**
     Search for the PARENT organization, corporate owner, or health system that owns or operates "{hco_name}".
-    Look for terms like "owned by", "operated by", "part of", "subsidiary of", "member of", "division of", or "affiliated with [health system name]".
     
-    - HCO_ID: The NPI number of the parent organization (10 digits), or "N/A" if not found
-    - HCO_Name: Name of the parent healthcare system, hospital network, or corporate owner (e.g., "HCA Healthcare", "CommonSpirit Health", "Ascension")
-    - HCO_Address1: Headquarters or main address of the parent organization
-    - HCO_City: City in ALL CAPS
-    - HCO_State: 2-letter state code
-    - HCO_ZIP: 5-digit zipcode
+    Search queries to try:
+    - "{hco_name} owned by"
+    - "{hco_name} parent company"
+    - "{hco_name} health system"
+    - "{hco_name} corporate headquarters"
+    - "[Parent company name] headquarters address"
+    
+    Look for terms like "owned by", "operated by", "part of", "subsidiary of", "member of", "division of", or "affiliated with".
+    
+    For the parent organization, you MUST provide:
+    - HCO_ID: The NPI number of the parent organization (10 digits). Search "[parent name] NPI number" or check nppes.cms.hhs.gov. Use "N/A" only if truly not findable.
+    - HCO_Name: Full name of the parent healthcare system, hospital network, or corporate owner (e.g., "Advocate Health", "HCA Healthcare", "CommonSpirit Health", "Ascension")
+    - HCO_Address1: REQUIRED - Headquarters street address of the parent organization. Search "[parent name] headquarters address" or check their website Contact/About page. Example: "3075 Highland Parkway"
+    - HCO_City: REQUIRED - Headquarters city in ALL CAPS. Example: "DOWNERS GROVE"
+    - HCO_State: REQUIRED - 2-letter state code of headquarters. Example: "IL"
+    - HCO_ZIP: REQUIRED - 5-digit zipcode of headquarters. Example: "60515"
 
-    **Search Tips:**
-    - Search "{hco_name} owned by" or "{hco_name} parent company" or "{hco_name} health system"
-    - Check the organization's website "About Us" page for parent company info
-    - If the organization IS the parent (no parent exists), return "N/A" for all HCO fields
-    - Return actual found data, not "N/A" unless truly not findable
+    **CRITICAL:** 
+    - If you find a parent company name like "Advocate Health", you MUST search for "Advocate Health headquarters address" and return the complete address.
+    - Do NOT leave address fields as "N/A" if the parent organization exists - their headquarters address is publicly available.
+    - Only return "N/A" for HCO fields if the organization truly has no parent (it IS the top-level parent).
     """
 
     completion = client.chat.completions.create(
