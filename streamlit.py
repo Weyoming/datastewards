@@ -772,26 +772,20 @@ def render_enrichment_page(session, selected_hco_df):
                 if is_ai_source:
                     row_cols[2].write("")
                 else:
-                    hcp_npi_val = hco_data.get("HCP_NPI")
-                    row_cols[2].write(str(hcp_npi_val) if pd.notna(hcp_npi_val) else "")
-                    
-                if is_ai_source:
-                    row_cols[3].write("")
-                else:
-                    row_cols[3].write(str(hco_data.get("HCO ID", "")))
+                    row_cols[2].write(str(hco_data.get("HCO ID", "")))
         
-                row_cols[4].write(hco_data.get("HCO NAME", ""))
-                row_cols[5].write(hco_data.get("HCO ADDRESS", ""))
-                row_cols[6].write(hco_data.get("HCO CITY", ""))
-                row_cols[7].write(hco_data.get("HCO STATE", ""))
-                row_cols[8].write(hco_data.get("HCO ZIP", ""))
+                row_cols[3].write(hco_data.get("HCO NAME", ""))
+                row_cols[4].write(hco_data.get("HCO ADDRESS", ""))
+                row_cols[5].write(hco_data.get("HCO CITY", ""))
+                row_cols[6].write(hco_data.get("HCO STATE", ""))
+                row_cols[7].write(hco_data.get("HCO ZIP", ""))
                 
                 # Priority column - show "-" if not analyzed yet
                 priority_info = priority_rankings.get(str(hco_id), {"priority": "-", "reason": "N/A"})
-                row_cols[9].write(str(priority_info.get("priority", "-")))
+                row_cols[8].write(str(priority_info.get("priority", "-")))
                 
                 # Reason button column - only show if priorities have been analyzed
-                with row_cols[10]:
+                with row_cols[9]:
                     if priority_rankings:
                         reason_key = f"reason_{hco_id}"
                         if st.button("ℹ️", key=reason_key, help="Click to see why this priority was assigned"):
