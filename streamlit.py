@@ -1012,6 +1012,32 @@ def render_main_page(session):
                             st.rerun()
         if not sql_item_found:
             st.info("The assistant did not return a SQL query for this prompt. It may be a greeting or a clarifying question.")
+            st.markdown("")
+            if st.button("🔍 Still want to proceed with Web Search?", key="web_search_no_sql", type="primary"):
+                # Create a default empty record for enrichment
+                st.session_state.empty_record_for_enrichment = {
+                    'ID': 'N/A',
+                    'NAME': '',
+                    'NPI': '',
+                    'ADDRESS1': '',
+                    'ADDRESS2': '',
+                    'CITY': '',
+                    'STATE': '',
+                    'ZIP': '',
+                    'COUNTRY': '',
+                    'PRIMARY_AFFL_HCO_ACCOUNT_ID': None,
+                    'OUTLET_ID': None,
+                    'OUTLET_NAME': '',
+                    'OUTLET_ADDRESS1': '',
+                    'OUTLET_CITY': '',
+                    'OUTLET_STATE': '',
+                    'OUTLET_ZIP': ''
+                }
+                # Store the search query for web search context
+                st.session_state.web_search_query = st.session_state.get('last_prompt', '')
+                st.session_state.selected_hco_id = 'empty_record'
+                st.session_state.current_view = "enrichment_page"
+                st.rerun()
 
     # --- MAIN INPUT LOGIC ---
     freeze_container = st.container(border=True)
