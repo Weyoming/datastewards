@@ -151,6 +151,7 @@ def send_cortex_message(session, prompt: str) -> dict:
         "semantic_model_file": f"@{CORTEX_CONFIG['database']}.{CORTEX_CONFIG['schema']}.{CORTEX_CONFIG['stage']}/{CORTEX_CONFIG['semantic_model_file']}",
     }
 
+    st.write(headers)
     st.write(request_body)
     
     resp = requests.post(api_url, headers=headers, json=request_body, timeout=30)
