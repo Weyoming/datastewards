@@ -256,8 +256,9 @@ def insert_or_update_record(
                 # Handle numpy/pandas types
                 if value is not None and hasattr(value, 'item'):
                     value = value.item()
-                if value is not None and str(value).strip():
-                    assignments[db_col] = value
+                # Allow empty strings (to clear fields) - only skip if value is None
+                if value is not None:
+                    assignments[db_col] = value if str(value).strip() else ""
                     updated_columns.append(db_col)
         st.write(field_to_column_map)
         st.write(assignments)
