@@ -1082,13 +1082,20 @@ def render_affiliation_section(session, current_record: dict, proposed_affiliati
             "Source": "AI Found"
         }
 
-    # Analysis Button
-    if all_affiliations and st.button("🎯 Analyze Priority Order with AI"):
-        with st.spinner("Analyzing priorities..."):
-            aff_list_for_api = [(k, v) for k, v in all_affiliations.items()]
-            rankings = get_affiliation_priorities(session, current_record, aff_list_for_api)
-            st.session_state.priority_rankings = rankings
+    # Action Buttons
+    btn_col1, btn_col2, _ = st.columns([2, 2, 4])
+    with btn_col1:
+        if st.button("🔄 Retry Fetch Affiliations"):
+            st.session_state.priority_rankings = {}
+            st.session_state.pop('enriched_data_cache', None)
             st.rerun()
+    with btn_col2:
+        if all_affiliations and st.button("🎯 Analyze Priority Order with AI"):
+            with st.spinner("Analyzing priorities..."):
+                aff_list_for_api = [(k, v) for k, v in all_affiliations.items()]
+                rankings = get_affiliation_priorities(session, current_record, aff_list_for_api)
+                st.session_state.priority_rankings = rankings
+                st.rerun()
 
     rankings = st.session_state.get('priority_rankings', {})
 
