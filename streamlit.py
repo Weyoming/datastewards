@@ -671,10 +671,13 @@ def render_enrichment_page(session, selected_hco_df):
                 hco_id = row.get('HCO_ID')
                 if not hco_id: continue
                 all_affiliations[hco_id] = {
-                    "SOURCE": "DB data", "HCP_NPI": row.get('HCP_NPI'),
-                    "HCO ID": hco_id, "HCO NAME": row.get('HCO_NAME'),
-                    "HCO ADDRESS": f"{row.get('HCO_ADDRESS1', '')}, {row.get('HCO_ADDRESS2', '')}".strip(", "),
-                    "HCO CITY": row.get('HCO_CITY'), "HCO STATE": row.get('HCO_STATE'), "HCO ZIP": row.get('HCO_ZIP'),
+                    "SOURCE": "DB data",
+                    "HCO ID": hco_id, 
+                    "HCO NAME": row.get('OUTLET_NAME'),
+                    "HCO ADDRESS": f"{row.get('OUTLET_ADDRESS1', '')}, {row.get('OUTLET_ADDRESS2', '')}".strip(", "),
+                    "HCO CITY": row.get('OUTLET_CITY'), 
+                    "HCO STATE": row.get('OUTLET_STATE'),
+                    "HCO ZIP": row.get('OUTLET_ZIP')
                 }
 
         for idx, hco in enumerate(ai_found_hcos):
