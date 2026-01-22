@@ -260,6 +260,7 @@ def insert_or_update_record(
                     assignments[db_col] = value
                     updated_columns.append(db_col)
         st.write(field_to_column_map)
+        st.write(assignments)
         if not assignments:
             return {"success": False, "operation": None, "message": "No valid fields to process.", "columns": []}
         
