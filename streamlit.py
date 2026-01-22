@@ -645,6 +645,8 @@ def render_enrichment_page(session, selected_hco_df):
         primary_id_val = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
         true_primary_hco_id = int(primary_id_val) if pd.notna(primary_id_val) else None
         
+        st.write(current_record)
+        st.write("current_record.get('NPI') or current_record.get('HCO_NPI')")
         hcp_npi = current_record.get("NPI") or current_record.get("HCO_NPI")
         db_affiliations_df = pd.DataFrame()
         if hcp_npi:
