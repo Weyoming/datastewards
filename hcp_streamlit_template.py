@@ -611,7 +611,7 @@ CUSTOM_CSS = """
         font-weight: 600;
         color: #4F8BE7;
         margin-top: 0.5rem;
-        font-size: 0.85rem;
+        font-size: 1rem;
     }
     .detail-value {
         padding-bottom: 0.5rem;
