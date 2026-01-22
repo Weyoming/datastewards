@@ -1146,6 +1146,8 @@ def render_affiliation_section(session, current_record: dict, proposed_affiliati
             with st.spinner("🔍 Fetching affiliations from web..."):
                 try:
                     raw_aff_data = fetch_affiliations_only(current_record)
+                    # Store raw response for debugging
+                    st.session_state.debug_raw_aff_response = raw_aff_data
                     # Parse raw affiliation data into list format
                     new_affiliations = []
                     if raw_aff_data and "Affiliation_ID" in raw_aff_data:
@@ -1171,6 +1173,11 @@ def render_affiliation_section(session, current_record: dict, proposed_affiliati
                 rankings = get_affiliation_priorities(session, current_record, aff_list_for_api)
                 st.session_state.priority_rankings = rankings
                 st.rerun()
+
+    # Debug: Show raw API response
+    if st.session_state.get('debug_raw_aff_response'):
+        with st.expander("🐛 Debug: Raw Perplexity API Response", expanded=True):
+            st.json(st.session_state.debug_raw_aff_response)
 
     rankings = st.session_state.get('priority_rankings', {})
 
