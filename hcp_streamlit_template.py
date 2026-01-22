@@ -345,17 +345,17 @@ def process_cortex_message(session, prompt: str):
         question_item = {"type": "text", "text": prompt.strip()}
         
         # Safely handle response structure
-        if "message" in response and "content" in response["message"]:
-            content = response["message"]["content"]
-            if isinstance(content, list):
-                content.insert(0, question_item)
-            else:
-                content = [question_item, {"type": "text", "text": str(content)}]
-                response["message"]["content"] = content
-        else:
-            response["message"] = {"content": [question_item]}
+        # Cortex Analyst returns response with "message" containing "content" list
+        message = response.get("message", {})
+        content = message.get("content", [])
         
-        st.session_state.messages.append({"role": "assistant", "content": response["message"]["content"]})
+        if not isinstance(content, list):
+            content = [{"type": "text", "text": str(content)}] if content else []
+        
+        # Insert question at the beginning
+        content.insert(0, question_item)
+        
+        st.session_state.messages.append({"role": "assistant", "content": content})
 
 # ============================================================================
 # LLM PRIORITY RANKING
@@ -1021,7 +1021,7 @@ def render_comparison_section(current_record: dict, proposed_data: dict, record_
     st.subheader("👤 Demographic Details")
     
     # Headers
-    headers = ["Field", "Current Value", "Proposed Value", "Source", "Update?"]
+    headers = ["Field", "Current Value", "Proposed Value", "Source", "Update/Insert?"]
     cols = st.columns(ENRICHMENT_PAGE_TABLES_CONFIG["demographics_col_sizes"], vertical_alignment="bottom")
     for col_obj, header in zip(cols, headers):
         col_obj.markdown(f"<div class='report-header'>{header}</div>", unsafe_allow_html=True)
