@@ -477,6 +477,59 @@ Return JSON only: {{ "rankings": [ {{ "key": "...", "priority": 1, "reason": "..
 # PERPLEXITY WEB SEARCH
 # ============================================================================
 
+def fetch_affiliations_only(entity_data, model_name="sonar-pro", use_pro_search=True,
+                           entity_type: str = None, affiliation_type: str = None):
+    """Fetch only affiliations for an entity using Perplexity API."""
+    client = Perplexity()
+    
+    entity_type = entity_type or APP_CONFIG['entity_name'].lower()
+    affiliation_type = affiliation_type or APP_CONFIG['affiliation_name'].lower()
+    
+    if hasattr(entity_data, 'to_dict'):
+        entity_data = entity_data.to_dict()
+    
+    def get_val(key):
+        val = entity_data.get(key, '')
+        if not val:
+            val = entity_data.get(f"{APP_CONFIG['entity_name']}_{key}", '')
+        return val or ''
+    
+    entity_name = get_val('NAME')
+    
+    user_query = f"""
+You are a healthcare data research specialist. Search the web for affiliations of this US {entity_type}:
+
+**{entity_type.title()} Information:**
+- Name: {entity_name}
+- NPI: {get_val('NPI')}
+- City: {get_val('CITY')}, State: {get_val('STATE')}
+
+**Task: Find ALL {affiliation_type.title()} Affiliations where this {entity_type} practices.**
+For EACH {affiliation_type}, provide:
+- Affiliation_ID: Organization NPI (10 digits) or "N/A"
+- Affiliation_Name: Full name of {affiliation_type}
+- Affiliation_NPI: Organization NPI if available
+- Affiliation_Address1: Street address
+- Affiliation_City: City in ALL CAPS
+- Affiliation_State: 2-letter state code
+- Affiliation_ZIP: 5-digit zipcode
+
+Search npiregistry.cms.hhs.gov, hospital websites, Healthgrades, Vitals, WebMD, Doximity.
+Return ALL found affiliations, not just one.
+"""
+
+    completion = client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": user_query}],
+        web_search_options={"search_type": "pro" if use_pro_search else "fast"},  
+        response_format={
+            "type": "json_schema",
+            "json_schema": {"schema": AffiliationData.model_json_schema()}
+        }
+    )
+
+    return json.loads(completion.choices[0].message.content)
+
 def search_entity_web(entity_data, model_name="sonar-pro", use_pro_search=True, 
                      entity_type: str = None, affiliation_type: str = None,
                      search_query: str = None):
@@ -1064,6 +1117,10 @@ def render_affiliation_section(session, current_record: dict, proposed_affiliati
     """
     st.subheader(f"🏥 {APP_CONFIG['affiliation_name']} Affiliations")
     
+    # Use retried affiliations from session state if available
+    if st.session_state.get('retried_affiliations'):
+        proposed_affiliations = st.session_state.retried_affiliations
+    
     # Data Processing (Same as before)
     all_affiliations = {}
     
@@ -1086,9 +1143,27 @@ def render_affiliation_section(session, current_record: dict, proposed_affiliati
     btn_col1, btn_col2, _ = st.columns([2, 2, 4])
     with btn_col1:
         if st.button("🔄 Retry Fetch Affiliations"):
-            st.session_state.priority_rankings = {}
-            st.session_state.pop('enriched_data_cache', None)
-            st.rerun()
+            with st.spinner("🔍 Fetching affiliations from web..."):
+                try:
+                    raw_aff_data = fetch_affiliations_only(current_record)
+                    # Parse raw affiliation data into list format
+                    new_affiliations = []
+                    if raw_aff_data and "Affiliation_ID" in raw_aff_data:
+                        count = len(raw_aff_data["Affiliation_ID"])
+                        for i in range(count):
+                            row = {}
+                            for key, val_list in raw_aff_data.items():
+                                if isinstance(val_list, list) and len(val_list) > i:
+                                    row[key] = val_list[i]
+                                else:
+                                    row[key] = ""
+                            new_affiliations.append(row)
+                    st.session_state.retried_affiliations = new_affiliations
+                    st.session_state.priority_rankings = {}
+                    st.toast("✅ Affiliations fetched successfully!", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to fetch affiliations: {e}")
     with btn_col2:
         if all_affiliations and st.button("🎯 Analyze Priority Order with AI"):
             with st.spinner("Analyzing priorities..."):
