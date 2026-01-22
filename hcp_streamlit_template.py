@@ -214,6 +214,102 @@ def get_snowflake_session():
     return Session.builder.configs(connection_parameters).create()
 
 # ============================================================================
+# DATABASE OPERATIONS
+# ============================================================================
+
+def insert_or_update_record(
+    session,
+    db: str,
+    schema: str,
+    table: str,
+    id_column: str,
+    field_to_column_map: dict,
+    current_df: pd.DataFrame,
+    proposed_df: pd.DataFrame,
+    record_id=None
+) -> dict:
+    """
+    Insert or update a record in the database.
+    
+    Args:
+        session: Snowflake session
+        db: Database name
+        schema: Schema name
+        table: Table name
+        id_column: Primary key column name
+        field_to_column_map: Dict mapping field labels to DB column names
+        current_df: DataFrame with current values (empty for insert)
+        proposed_df: DataFrame with proposed values
+        record_id: Record ID for update (optional, required if current_df not empty)
+    
+    Returns:
+        dict with 'success' (bool), 'operation' ('insert'/'update'), 'message' (str), 'columns' (list)
+    """
+    try:
+        # Build column assignments from proposed_df
+        assignments = {}
+        updated_columns = []
+        
+        for field_label, db_col in field_to_column_map.items():
+            if field_label in proposed_df.columns:
+                value = proposed_df[field_label].iloc[0] if len(proposed_df) > 0 else None
+                # Handle numpy/pandas types
+                if value is not None and hasattr(value, 'item'):
+                    value = value.item()
+                if value is not None and str(value).strip():
+                    assignments[db_col] = value
+                    updated_columns.append(db_col)
+        
+        if not assignments:
+            return {"success": False, "operation": None, "message": "No valid fields to process.", "columns": []}
+        
+        target_table = session.table(f'"{db}"."{schema}"."{table}"')
+        
+        # Determine operation: INSERT if current_df is empty, UPDATE otherwise
+        if current_df is None or current_df.empty:
+            # INSERT new record
+            from snowflake.snowpark import Row
+            new_row = session.create_dataframe([Row(**assignments)])
+            new_row.write.mode("append").save_as_table(f'"{db}"."{schema}"."{table}"')
+            
+            return {
+                "success": True,
+                "operation": "insert",
+                "message": f"New record inserted successfully.",
+                "columns": updated_columns
+            }
+        else:
+            # UPDATE existing record
+            if not record_id or record_id == 'N/A':
+                return {"success": False, "operation": "update", "message": "No valid record ID for update.", "columns": []}
+            
+            # Convert record_id to int if numeric
+            try:
+                record_id_typed = int(record_id) if str(record_id).isdigit() else record_id
+            except:
+                record_id_typed = record_id
+            
+            update_result = target_table.update(assignments, col(id_column) == record_id_typed)
+            
+            if update_result.rows_updated > 0:
+                return {
+                    "success": True,
+                    "operation": "update",
+                    "message": f"Record {record_id} updated successfully.",
+                    "columns": updated_columns
+                }
+            else:
+                return {
+                    "success": False,
+                    "operation": "update",
+                    "message": f"No rows updated. Record ID {record_id} may not exist.",
+                    "columns": []
+                }
+                
+    except Exception as e:
+        return {"success": False, "operation": None, "message": f"Database error: {str(e)}", "columns": []}
+
+# ============================================================================
 # CORTEX ANALYST FUNCTIONS
 # ============================================================================
 
@@ -534,9 +630,9 @@ def show_priority_dialog():
     st.markdown("---")
     st.write(popup_data.get('reason', 'N/A'))
 
-@st.dialog("⚠️ Confirm Updates", width="large")
+@st.dialog("⚠️ Confirm Changes", width="large")
 def show_confirm_update_dialog():
-    """Dialog to confirm changes before DB update."""
+    """Dialog to confirm changes before DB insert/update."""
     changes = st.session_state.get('pending_changes', [])
     
     if not changes:
@@ -547,93 +643,74 @@ def show_confirm_update_dialog():
         return
 
     record_id = changes[0].get('id') if changes else None
+    is_insert = not record_id or record_id == 'N/A'
     
-    # Validate record_id
-    if not record_id or record_id == 'N/A':
-        st.error("Cannot update: No valid record ID. This may be a new record from web search.")
-        if st.button("Close"):
-            st.session_state.show_confirm_dialog = False
-            st.rerun()
-        return
-
-    st.warning("Are you sure you want to apply these updates?", icon="⚠️")
-    st.caption(f"Record ID: **{record_id}**")
+    # Build current_df and proposed_df from changes
+    current_data = {}
+    proposed_data = {}
+    for change in changes:
+        field = change.get('field')
+        current_data[field] = change.get('current')
+        proposed_data[field] = change.get('proposed')
+    
+    current_df = pd.DataFrame([current_data]) if not is_insert else pd.DataFrame()
+    proposed_df = pd.DataFrame([proposed_data])
+    
+    # Show appropriate header
+    if is_insert:
+        st.info("This will **INSERT** a new record into the database.", icon="➕")
+    else:
+        st.warning("Are you sure you want to **UPDATE** this record?", icon="⚠️")
+        st.caption(f"Record ID: **{record_id}**")
     
     st.markdown("### Pending Changes")
     for change in changes:
         col1, col2, col3 = st.columns([1.5, 2, 2], vertical_alignment="center")
         col1.markdown(f"**{change['field']}**")
-        col2.markdown(f"Current: `{change['current']}`")
+        if is_insert:
+            col2.markdown("*(New Record)*")
+        else:
+            col2.markdown(f"Current: `{change['current']}`")
         col3.markdown(f"New: :green[`{change['proposed']}`]")
         st.divider()
         
     col_submit, col_cancel = st.columns(2)
     with col_submit:
-        if st.button("✅ Yes, Update Database", type="primary", use_container_width=True):
+        button_label = "➕ Yes, Insert Record" if is_insert else "✅ Yes, Update Record"
+        if st.button(button_label, type="primary", use_container_width=True):
             session = get_snowflake_session()
             
-            # Convert record_id to int if it's numeric string
-            try:
-                record_id_typed = int(record_id) if str(record_id).isdigit() else record_id
-            except:
-                record_id_typed = record_id
+            # Call the insert_or_update_record function
+            result = insert_or_update_record(
+                session=session,
+                db=DATABASE_UPDATE_CONFIG["database"],
+                schema=DATABASE_UPDATE_CONFIG["schema"],
+                table=DATABASE_UPDATE_CONFIG["table"],
+                id_column=DATABASE_UPDATE_CONFIG["id_column"],
+                field_to_column_map=DATABASE_UPDATE_CONFIG["field_to_column_map"],
+                current_df=current_df,
+                proposed_df=proposed_df,
+                record_id=record_id
+            )
             
-            # Build update assignments from config
-            update_assignments = {}
-            updated_columns = []
-            
-            for change in changes:
-                field_key = change.get('field')
-                db_col = DATABASE_UPDATE_CONFIG["field_to_column_map"].get(field_key)
-                if db_col:
-                    new_value = change.get('proposed')
-                    # Handle numpy/pandas types
-                    if hasattr(new_value, 'item'):
-                        new_value = new_value.item()
-                    update_assignments[db_col] = new_value
-                    updated_columns.append(db_col)
-            
-            if not update_assignments:
-                st.warning("No valid fields to update.")
-                return
-            
-            # Execute update using config
-            db = DATABASE_UPDATE_CONFIG["database"]
-            schema = DATABASE_UPDATE_CONFIG["schema"]
-            table = DATABASE_UPDATE_CONFIG["table"]
-            id_col = DATABASE_UPDATE_CONFIG["id_column"]
-            
-            # Debug info
-            st.info(f"Updating table: {db}.{schema}.{table}")
-            st.info(f"WHERE {id_col} = {record_id_typed} (type: {type(record_id_typed).__name__})")
-            st.info(f"SET: {update_assignments}")
-            
-            try:
-                target_table = session.table(f'"{db}"."{schema}"."{table}"')
-                update_result = target_table.update(update_assignments, col(id_col) == record_id_typed)
+            if result["success"]:
+                # Clear checkbox selections
+                for change in changes:
+                    cb_db_col = DATABASE_UPDATE_CONFIG['field_to_column_map'].get(change['field'], '')
+                    checkbox_key = f"approve_{record_id}_{cb_db_col}"
+                    if checkbox_key in st.session_state:
+                        st.session_state[checkbox_key] = False
                 
-                st.info(f"Rows updated: {update_result.rows_updated}")
+                st.session_state.show_confirm_dialog = False
+                st.session_state.pending_changes = []
                 
-                if update_result.rows_updated > 0:
-                    updated_cols_str = ", ".join(updated_columns)
-                    
-                    # Clear checkbox selections
-                    for change in changes:
-                        cb_db_col = DATABASE_UPDATE_CONFIG['field_to_column_map'].get(change['field'], '')
-                        checkbox_key = f"approve_{record_id}_{cb_db_col}"
-                        if checkbox_key in st.session_state:
-                            st.session_state[checkbox_key] = False
-                    
-                    st.session_state.show_confirm_dialog = False
-                    st.session_state.pending_changes = []
-                    st.toast(f"✅ Record {record_id} updated! Changed: {updated_cols_str}", icon="✅")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error(f"No rows updated. Record ID {record_id} may not exist in table {table}.")
-                    
-            except Exception as e:
-                st.error(f"Database error: {str(e)}")
+                cols_str = ", ".join(result["columns"])
+                op_icon = "➕" if result["operation"] == "insert" else "✅"
+                st.toast(f"{op_icon} {result['message']} Columns: {cols_str}", icon=op_icon)
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error(result["message"])
             
     with col_cancel:
         if st.button("❌ Cancel", use_container_width=True):
