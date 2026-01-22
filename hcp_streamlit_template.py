@@ -259,7 +259,7 @@ def insert_or_update_record(
                 if value is not None and str(value).strip():
                     assignments[db_col] = value
                     updated_columns.append(db_col)
-        
+        st.write(assignments)
         if not assignments:
             return {"success": False, "operation": None, "message": "No valid fields to process.", "columns": []}
         
