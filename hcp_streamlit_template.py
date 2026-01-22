@@ -343,7 +343,18 @@ def process_cortex_message(session, prompt: str):
     with st.spinner("Searching..."):
         response = send_cortex_message(session, prompt)
         question_item = {"type": "text", "text": prompt.strip()}
-        response["message"]["content"].insert(0, question_item)
+        
+        # Safely handle response structure
+        if "message" in response and "content" in response["message"]:
+            content = response["message"]["content"]
+            if isinstance(content, list):
+                content.insert(0, question_item)
+            else:
+                content = [question_item, {"type": "text", "text": str(content)}]
+                response["message"]["content"] = content
+        else:
+            response["message"] = {"content": [question_item]}
+        
         st.session_state.messages.append({"role": "assistant", "content": response["message"]["content"]})
 
 # ============================================================================
