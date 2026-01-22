@@ -648,7 +648,7 @@ def render_enrichment_page(session, selected_hco_df):
         hcp_npi = current_record.get("NPI") or current_record.get("HCO_NPI")
         db_affiliations_df = pd.DataFrame()
         if hcp_npi:
-            query = f"SELECT * FROM HCP_HCO_AFFILIATION WHERE HCP_NPI = '{hcp_npi}'"
+            query = f"SELECT * FROM OUTLET_HCO_AFFILIATION WHERE HCO_ID = '{hcp_npi}'"
             db_affiliations_df = session.sql(query).to_pandas()
 
         # Build ai_found_hcos from proposed_hcp_affiliation_data_df
@@ -990,7 +990,7 @@ def render_main_page(session):
                             # Create a default empty record for enrichment
                             st.session_state.empty_record_for_enrichment = {
                                 'ID': 'N/A',
-                                'NAME': st.session_state.get('web_search_query', '').title(),
+                                'NAME': st.session_state.get('web_search_query', '').title().strip(),
                                 'NPI': '',
                                 'ADDRESS1': '',
                                 'ADDRESS2': '',
@@ -1375,4 +1375,3 @@ elif st.session_state.current_view == "enrichment_page":
         if st.button("Back to Main Page"):
             st.session_state.current_view = "main"
             st.rerun()
-
