@@ -338,30 +338,25 @@ def send_cortex_message(session, prompt: str) -> dict:
 
 def process_cortex_message(session, prompt: str):
     """Process user message and update session state."""
-    st.session_state.messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    # Clear previous state (matching original streamlit.py)
+    st.session_state.messages = []
+    st.session_state.results_df = None
+    st.session_state.selected_entity_id = None
     
-    with st.spinner("Searching in database..."):
+    st.session_state.messages.append(
+        {"role": "user", "content": [{"type": "text", "text": prompt}]}
+    )
+    
+    with st.spinner("Generating response..."):
         try:
             response = send_cortex_message(session, prompt)
             question_item = {"type": "text", "text": prompt.strip()}
-            
-            # Cortex Analyst response structure:
-            # {"message": {"role": "analyst", "content": [{"type": "text/sql", ...}]}}
-            content = []
-            if isinstance(response, dict):
-                message = response.get("message")
-                if isinstance(message, dict):
-                    content = message.get("content", [])
-                    if not isinstance(content, list):
-                        content = []
-            
-            # Insert question at the beginning
-            content.insert(0, question_item)
-            
-            st.session_state.messages.append({"role": "assistant", "content": content})
+            response["message"]["content"].insert(0, question_item)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": response["message"]["content"]}
+            )
         except Exception as e:
-            st.error(f"Search error: {str(e)}")
-            st.session_state.messages = []
+            st.error(f"Error occurred: {str(e)}")
 
 # ============================================================================
 # LLM PRIORITY RANKING
@@ -745,9 +740,7 @@ def render_main_page(session):
     
     with st.container():
         user_input = st.chat_input(APP_CONFIG["search_placeholder"])
-        if user_input:
-            # Always search, even if same prompt (user might want to retry)
-            st.session_state.results_df = None  # Clear previous results
+        if user_input and user_input != st.session_state.get("last_prompt"):
             process_cortex_message(session, user_input)
             st.session_state.last_prompt = user_input
     
