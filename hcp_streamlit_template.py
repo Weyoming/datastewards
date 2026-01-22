@@ -351,15 +351,6 @@ def process_cortex_message(session, prompt: str):
         try:
             response = send_cortex_message(session, prompt)
             question_item = {"type": "text", "text": prompt.strip()}
-            
-            # Validate response structure to avoid "string indices must be integers" error
-            if not isinstance(response, dict):
-                raise Exception(f"Unexpected response type: {type(response).__name__}")
-            if "message" not in response or not isinstance(response["message"], dict):
-                raise Exception("Invalid response structure from Cortex Analyst")
-            if "content" not in response["message"] or not isinstance(response["message"]["content"], list):
-                raise Exception("Missing or invalid content in response")
-            
             response["message"]["content"].insert(0, question_item)
             st.session_state.messages.append(
                 {"role": "assistant", "content": response["message"]["content"]}
