@@ -634,8 +634,6 @@ def render_enrichment_page(session, selected_hco_df):
     st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
     
     hco_affiliation_title = f"HCO Affiliation information of : {current_record.get('Name', '') or current_record.get('HCO_NAME', 'N/A')}"
-
-    st.write(current_record)
     
     with st.expander(hco_affiliation_title, expanded=False):
         
@@ -673,7 +671,7 @@ def render_enrichment_page(session, selected_hco_df):
                 hco_id = row.get('HCO_ID')
                 if not hco_id: continue
                 all_affiliations[hco_id] = {
-                    "SOURCE": "HCOS data", "HCP_NPI": row.get('HCP_NPI'),
+                    "SOURCE": "DB data", "HCP_NPI": row.get('HCP_NPI'),
                     "HCO ID": hco_id, "HCO NAME": row.get('HCO_NAME'),
                     "HCO ADDRESS": f"{row.get('HCO_ADDRESS1', '')}, {row.get('HCO_ADDRESS2', '')}".strip(", "),
                     "HCO CITY": row.get('HCO_CITY'), "HCO STATE": row.get('HCO_STATE'), "HCO ZIP": row.get('HCO_ZIP'),
