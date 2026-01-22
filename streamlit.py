@@ -634,6 +634,8 @@ def render_enrichment_page(session, selected_hco_df):
     st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
     
     hco_affiliation_title = f"HCO Affiliation information of : {current_record.get('Name', '') or current_record.get('HCO_NAME', 'N/A')}"
+
+    st.write(current_record)
     
     with st.expander(hco_affiliation_title, expanded=False):
         
@@ -645,8 +647,6 @@ def render_enrichment_page(session, selected_hco_df):
         primary_id_val = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
         true_primary_hco_id = int(primary_id_val) if pd.notna(primary_id_val) else None
         
-        st.write(current_record)
-        st.write("current_record.get('NPI') or current_record.get('HCO_NPI')")
         hcp_npi = current_record.get("NPI") or current_record.get("HCO_NPI")
         db_affiliations_df = pd.DataFrame()
         if hcp_npi:
