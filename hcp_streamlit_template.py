@@ -344,13 +344,15 @@ def process_cortex_message(session, prompt: str):
         response = send_cortex_message(session, prompt)
         question_item = {"type": "text", "text": prompt.strip()}
         
-        # Safely handle response structure
-        # Cortex Analyst returns response with "message" containing "content" list
-        message = response.get("message", {})
-        content = message.get("content", [])
-        
-        if not isinstance(content, list):
-            content = [{"type": "text", "text": str(content)}] if content else []
+        # Cortex Analyst response structure:
+        # {"message": {"role": "analyst", "content": [{"type": "text/sql", ...}]}}
+        content = []
+        if isinstance(response, dict):
+            message = response.get("message")
+            if isinstance(message, dict):
+                content = message.get("content", [])
+                if not isinstance(content, list):
+                    content = []
         
         # Insert question at the beginning
         content.insert(0, question_item)
