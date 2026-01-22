@@ -647,10 +647,10 @@ def render_enrichment_page(session, selected_hco_df):
         primary_id_val = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
         true_primary_hco_id = int(primary_id_val) if pd.notna(primary_id_val) else None
         
-        hcp_npi = current_record.get("NPI") or current_record.get("HCO_NPI")
+        hco_id = current_record.get("ID") or current_record.get("HCO_ID")
         db_affiliations_df = pd.DataFrame()
-        if hcp_npi:
-            query = f"SELECT * FROM OUTLET_HCO_AFFILIATION WHERE HCO_ID = '{hcp_npi}'"
+        if hco_id:
+            query = f"SELECT * FROM OUTLET_HCO_AFFILIATION WHERE HCO_ID = '{hco_id}'"
             db_affiliations_df = session.sql(query).to_pandas()
 
         # Build ai_found_hcos from proposed_hcp_affiliation_data_df
