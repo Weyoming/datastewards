@@ -990,7 +990,7 @@ def render_main_page(session):
                             # Create a default empty record for enrichment
                             st.session_state.empty_record_for_enrichment = {
                                 'ID': 'N/A',
-                                'NAME': '',
+                                'NAME': st.session_state.get('web_search_query', '').title(),
                                 'NPI': '',
                                 'ADDRESS1': '',
                                 'ADDRESS2': '',
@@ -1375,3 +1375,4 @@ elif st.session_state.current_view == "enrichment_page":
         if st.button("Back to Main Page"):
             st.session_state.current_view = "main"
             st.rerun()
+
