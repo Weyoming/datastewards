@@ -331,8 +331,10 @@ def render_enrichment_page(session, selected_hco_df):
     
     # Render confirmation dialog if the state is set
     if st.session_state.get('show_confirm_dialog'):
+        is_new_record = st.session_state.selected_hco_id == 'empty_record' or str(get_val(selected_record, 'ID')) in ['', 'N/A']
         with dialog_placeholder.container():
-            st.warning("Are you sure you want to update the selected fields? This action cannot be undone.", icon="⚠️")
+            action_text = "insert a new record" if is_new_record else "update the selected fields"
+            st.warning(f"Are you sure you want to {action_text}? This action cannot be undone.", icon="⚠️")
             
             # --- MODIFIED: Display selected changes and remaining records in two tables ---
             approved_df_cols = st.session_state.get('approved_cols', [])
@@ -382,61 +384,83 @@ def render_enrichment_page(session, selected_hco_df):
                 if field not in change_fields:
                     remaining_details_to_display.append([field, selected_record.get(field)])
             
-            if remaining_details_to_display:
+            if not is_new_record and remaining_details_to_display:
                 st.markdown("**Other profile details of the account (not changing):**")
                 remaining_df = pd.DataFrame(remaining_details_to_display, columns=["Field", "Value"])
                 st.dataframe(remaining_df, hide_index=True, use_container_width=True)
 
+        if not is_new_record:    
             st.markdown("---")
             # --- END MODIFIED ---
-            
+        else:
             # Use st.columns for horizontal buttons
             col1, col2 = st.columns([1, 1])
+            confirm_btn_label = "Yes, Insert" if is_new_record else "Yes, Update"
             with col1:
-                if st.button("Yes, Update", key="confirm_yes"):
+                if st.button(confirm_btn_label, key="confirm_yes"):
                     approved_df_cols = st.session_state.get('approved_cols', [])
                     selected_id = st.session_state.selected_hco_id
                     
                     if not approved_df_cols:
-                        st.info("No fields were selected for update. Please go back and select fields.")
+                        st.info("No fields were selected. Please go back and select fields.")
                         st.session_state.show_confirm_dialog = False
                         st.rerun()
                     else:
-                        with st.spinner("Updating record in Snowflake..."):
+                        spinner_text = "Inserting record in Snowflake..." if is_new_record else "Updating record in Snowflake..."
+                        with st.spinner(spinner_text):
                             try:
                                 db_column_map = {
                                     "Name": "NAME", "Address Line1": "ADDRESS1", "Address Line2": "ADDRESS2",
                                     "City": "CITY", "State": "STATE", "ZIP": "ZIP"
                                 }
-                                update_assignments = {}
+                                assignments = {}
                                 proposed_record = st.session_state.proposed_record
-                                st.write(proposed_record)
-                                updated_columns_list = []
+                                columns_list = []
                                 for col_name in approved_df_cols:
                                     db_col_name = db_column_map.get(col_name)
                                     if db_col_name:
                                         new_value = proposed_record.get(col_name)
                                         if hasattr(new_value, 'item'): new_value = new_value.item()
-                                        update_assignments[db_col_name] = new_value
-                                        updated_columns_list.append(db_col_name)
+                                        assignments[db_col_name] = new_value
+                                        columns_list.append(db_col_name)
 
                                 DATABASE, SCHEMA, YOUR_TABLE_NAME = "CORTEX_ANALYST_HCK", "PUBLIC", "HCO"
                                 target_table = session.table(f'"{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"')
-                                update_result = target_table.update(update_assignments, col("ID") == selected_id)
-
-                                st.write(update_result)
-
-                                if update_result.rows_updated > 0:
-                                    updated_cols_str = ", ".join(updated_columns_list)
-                                    custom_message = f"Record for ID: {selected_id} updated successfully. Changed columns: {updated_cols_str}."
+                                
+                                if is_new_record:
+                                    # Get max ID and add 1 for new record
+                                    max_id_result = session.sql(f'SELECT COALESCE(MAX(ID), 0) AS MAX_ID FROM "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"').collect()
+                                    new_id = int(max_id_result[0].MAX_ID) + 1
+                                    
+                                    # Add ID to columns and assignments
+                                    columns_list.insert(0, "ID")
+                                    assignments["ID"] = new_id
+                                    
+                                    # INSERT new record using SQL
+                                    col_names = ", ".join(columns_list)
+                                    col_values = ", ".join([f"'{str(assignments[c])}'" if assignments[c] is not None else "NULL" for c in columns_list])
+                                    insert_sql = f'INSERT INTO "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" ({col_names}) VALUES ({col_values})'
+                                    session.sql(insert_sql).collect()
+                                    cols_str = ", ".join(columns_list)
+                                    custom_message = f"New record inserted successfully with ID: {new_id}. Columns: {cols_str}."
                                     st.session_state.show_popup = True
-                                    st.session_state.popup_message_info = { 'type': 'update_success', 'id': selected_id, 'message': custom_message }
+                                    st.session_state.popup_message_info = { 'type': 'insert_success', 'id': new_id, 'message': custom_message }
                                 else:
-                                    st.warning(f"Record for ID {selected_id} was not found for update.")
-                                    st.session_state.show_confirm_dialog = False
-                                    st.rerun()
+                                    # UPDATE existing record
+                                    st.write(f"DEBUG: Updating ID={selected_id}, assignments={assignments}")
+                                    update_result = target_table.update(assignments, col("ID") == selected_id)
+                                    st.write(f"DEBUG: update_result={update_result}")
+                                    if update_result.rows_updated > 0:
+                                        cols_str = ", ".join(columns_list)
+                                        custom_message = f"Record for ID: {selected_id} updated successfully. Changed columns: {cols_str}."
+                                        st.session_state.show_popup = True
+                                        st.session_state.popup_message_info = { 'type': 'update_success', 'id': selected_id, 'message': custom_message }
+                                    else:
+                                        st.warning(f"Record for ID {selected_id} was not found for update.")
+                                        st.session_state.show_confirm_dialog = False
+                                        st.rerun()
                             except Exception as e:
-                                st.error(f"An error occurred while updating the record: {e}")
+                                st.error(f"An error occurred: {e}")
                                 st.session_state.show_confirm_dialog = False
                                 st.rerun()
                                 
@@ -615,8 +639,10 @@ def render_enrichment_page(session, selected_hco_df):
 
         st.write("")
         _, btn_col = st.columns([5, 1])
+        is_new_record = selected_id == 'empty_record' or str(get_val(selected_record, 'ID')) in ['', 'N/A']
+        btn_label = "Insert Record 💾" if is_new_record else "Update Record 💾"
         with btn_col:
-            if st.button("Update Record 💾", type="primary", key=f"update_btn_{selected_id}"):
+            if st.button(btn_label, type="primary", key=f"update_btn_{selected_id}"):
                 approved_df_cols = []
                 for field_label, col_name in provider_mapping.items():
                     checkbox_key = f"approve_{selected_id}_{col_name}"
@@ -1021,21 +1047,13 @@ def render_main_page(session):
                 # Create a default empty record for enrichment
                 st.session_state.empty_record_for_enrichment = {
                     'ID': 'N/A',
-                    'NAME': '',
-                    'NPI': '',
-                    'ADDRESS1': '',
-                    'ADDRESS2': '',
-                    'CITY': '',
-                    'STATE': '',
-                    'ZIP': '',
-                    'COUNTRY': '',
-                    'PRIMARY_AFFL_HCO_ACCOUNT_ID': None,
-                    'OUTLET_ID': None,
-                    'OUTLET_NAME': '',
-                    'OUTLET_ADDRESS1': '',
-                    'OUTLET_CITY': '',
-                    'OUTLET_STATE': '',
-                    'OUTLET_ZIP': ''
+                    'NAME': None,
+                    'ADDRESS1': None,
+                    'ADDRESS2': None,
+                    'CITY': None,
+                    'STATE': None,
+                    'ZIP': None,
+                    'COUNTRY': None
                 }
                 # Store the search query for web search context
                 st.session_state.web_search_query = st.session_state.get('last_prompt', '')
