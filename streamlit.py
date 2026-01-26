@@ -389,100 +389,101 @@ def render_enrichment_page(session, selected_hco_df):
                 remaining_df = pd.DataFrame(remaining_details_to_display, columns=["Field", "Value"])
                 st.dataframe(remaining_df, hide_index=True, use_container_width=True)
 
-        if not is_new_record:    
-            st.markdown("---")
-            # --- END MODIFIED ---
-        
-        # Use st.columns for horizontal buttons
-        col1, col2 = st.columns([1, 1])
-        confirm_btn_label = "Yes, Insert" if is_new_record else "Yes, Update"
-        with col1:
-            if st.button(confirm_btn_label, key="confirm_yes"):
-                approved_df_cols = st.session_state.get('approved_cols', [])
-                selected_id = st.session_state.selected_hco_id
-                
-                st.write(f"DEBUG: approved_df_cols = {approved_df_cols}")
-                st.write(f"DEBUG: is_new_record = {is_new_record}")
-                
-                if not approved_df_cols:
-                    st.info("No fields were selected. Please go back and select fields.")
-                    st.session_state.show_confirm_dialog = False
-                    st.rerun()
-                else:
-                    spinner_text = "Inserting record in Snowflake..." if is_new_record else "Updating record in Snowflake..."
-                    with st.spinner(spinner_text):
-                        try:
-                            db_column_map = {
-                                "Name": "NAME", "Address Line1": "ADDRESS1", "Address Line2": "ADDRESS2",
-                                "City": "CITY", "State": "STATE", "ZIP": "ZIP"
-                            }
-                            assignments = {}
-                            proposed_record = st.session_state.proposed_record
-                            columns_list = []
-                            
-                            st.write(f"DEBUG: proposed_record = {proposed_record}")
-                            
-                            for col_name in approved_df_cols:
-                                db_col_name = db_column_map.get(col_name)
-                                st.write(f"DEBUG: col_name={col_name}, db_col_name={db_col_name}")
-                                if db_col_name:
-                                    new_value = proposed_record.get(col_name)
-                                    if hasattr(new_value, 'item'): new_value = new_value.item()
-                                    assignments[db_col_name] = new_value
-                                    columns_list.append(db_col_name)
-
-                            st.write(f"DEBUG: columns_list = {columns_list}")
-                            st.write(f"DEBUG: assignments = {assignments}")
-
-                            DATABASE, SCHEMA, YOUR_TABLE_NAME = "CORTEX_ANALYST_HCK", "PUBLIC", "HCO"
-                            target_table = session.table(f'"{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"')
-                            
-                            if is_new_record:
-                                # Get max ID and add 1 for new record
-                                max_id_result = session.sql(f'SELECT COALESCE(MAX(ID), 0) AS MAX_ID FROM "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"').collect()
-                                new_id = int(max_id_result[0].MAX_ID) + 1
-                                st.write(f"DEBUG: new_id = {new_id}")
-                                
-                                # Add ID to columns and assignments
-                                columns_list.insert(0, "ID")
-                                assignments["ID"] = new_id
-                                
-                                # INSERT new record using SQL
-                                col_names = ", ".join(columns_list)
-                                col_values = ", ".join([f"'{str(assignments[c])}'" if assignments[c] is not None else "NULL" for c in columns_list])
-                                insert_sql = f'INSERT INTO "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" ({col_names}) VALUES ({col_values})'
-                                st.write(f"DEBUG: insert_sql = {insert_sql}")
-                                session.sql(insert_sql).collect()
-                                st.write("DEBUG: INSERT executed successfully")
-                                cols_str = ", ".join(columns_list)
-                                custom_message = f"New record inserted successfully with ID: {new_id}. Columns: {cols_str}."
-                                st.session_state.show_popup = True
-                                st.session_state.popup_message_info = { 'type': 'insert_success', 'id': new_id, 'message': custom_message }
-                            else:
-                                # UPDATE existing record
-                                st.write(f"DEBUG: Updating ID={selected_id}, assignments={assignments}")
-                                update_result = target_table.update(assignments, col("ID") == selected_id)
-                                st.write(f"DEBUG: update_result={update_result}")
-                                if update_result.rows_updated > 0:
-                                    cols_str = ", ".join(columns_list)
-                                    custom_message = f"Record for ID: {selected_id} updated successfully. Changed columns: {cols_str}."
-                                    st.session_state.show_popup = True
-                                    st.session_state.popup_message_info = { 'type': 'update_success', 'id': selected_id, 'message': custom_message }
-                                else:
-                                    st.warning(f"Record for ID {selected_id} was not found for update.")
-                                    st.session_state.show_confirm_dialog = False
-                                    st.rerun()
-                        except Exception as e:
-                            st.error(f"An error occurred: {e}")
-                            st.session_state.show_confirm_dialog = False
-                            st.rerun()
-                            
+            if not is_new_record:    
+                st.markdown("---")
+            
+            # Use st.columns for horizontal buttons - INSIDE the container
+            col1, col2 = st.columns([1, 1])
+            confirm_btn_label = "Yes, Insert" if is_new_record else "Yes, Update"
+            with col1:
+                if st.button(confirm_btn_label, key="confirm_yes"):
+                    approved_df_cols = st.session_state.get('approved_cols', [])
+                    selected_id = st.session_state.selected_hco_id
+                    
+                    st.write(f"DEBUG: approved_df_cols = {approved_df_cols}")
+                    st.write(f"DEBUG: is_new_record = {is_new_record}")
+                    
+                    if not approved_df_cols:
+                        st.info("No fields were selected. Please go back and select fields.")
                         st.session_state.show_confirm_dialog = False
                         st.rerun()
-        with col2:
-            if st.button("Cancel", key="confirm_cancel"):
-                st.session_state.show_confirm_dialog = False
-                st.rerun()
+                    else:
+                        spinner_text = "Inserting record in Snowflake..." if is_new_record else "Updating record in Snowflake..."
+                        with st.spinner(spinner_text):
+                            try:
+                                db_column_map = {
+                                    "Name": "NAME", "Address Line1": "ADDRESS1", "Address Line2": "ADDRESS2",
+                                    "City": "CITY", "State": "STATE", "ZIP": "ZIP"
+                                }
+                                assignments = {}
+                                proposed_record = st.session_state.proposed_record
+                                columns_list = []
+                                
+                                st.write(f"DEBUG: proposed_record = {proposed_record}")
+                                
+                                for col_name in approved_df_cols:
+                                    db_col_name = db_column_map.get(col_name)
+                                    st.write(f"DEBUG: col_name={col_name}, db_col_name={db_col_name}")
+                                    if db_col_name:
+                                        new_value = proposed_record.get(col_name)
+                                        if hasattr(new_value, 'item'): new_value = new_value.item()
+                                        assignments[db_col_name] = new_value
+                                        columns_list.append(db_col_name)
+
+                                st.write(f"DEBUG: columns_list = {columns_list}")
+                                st.write(f"DEBUG: assignments = {assignments}")
+
+                                DATABASE, SCHEMA, YOUR_TABLE_NAME = "CORTEX_ANALYST_HCK", "PUBLIC", "HCO"
+                                target_table = session.table(f'"{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"')
+                                
+                                if is_new_record:
+                                    # Get max ID and add 1 for new record
+                                    max_id_result = session.sql(f'SELECT COALESCE(MAX(ID), 0) AS MAX_ID FROM "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"').collect()
+                                    new_id = int(max_id_result[0].MAX_ID) + 1
+                                    st.write(f"DEBUG: new_id = {new_id}")
+                                    
+                                    # Add ID to columns and assignments
+                                    columns_list.insert(0, "ID")
+                                    assignments["ID"] = new_id
+                                    
+                                    # INSERT new record using SQL
+                                    col_names = ", ".join(columns_list)
+                                    col_values = ", ".join([f"'{str(assignments[c])}'" if assignments[c] is not None else "NULL" for c in columns_list])
+                                    insert_sql = f'INSERT INTO "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" ({col_names}) VALUES ({col_values})'
+                                    st.write(f"DEBUG: insert_sql = {insert_sql}")
+                                    session.sql(insert_sql).collect()
+                                    st.write("DEBUG: INSERT executed successfully")
+                                    cols_str = ", ".join(columns_list)
+                                    custom_message = f"New record inserted successfully with ID: {new_id}. Columns: {cols_str}."
+                                    st.session_state.show_popup = True
+                                    st.session_state.popup_message_info = { 'type': 'insert_success', 'id': new_id, 'message': custom_message }
+                                else:
+                                    # UPDATE existing record
+                                    st.write(f"DEBUG: Updating ID={selected_id}, assignments={assignments}")
+                                    update_result = target_table.update(assignments, col("ID") == selected_id)
+                                    st.write(f"DEBUG: update_result={update_result}")
+                                    if update_result.rows_updated > 0:
+                                        cols_str = ", ".join(columns_list)
+                                        custom_message = f"Record for ID: {selected_id} updated successfully. Changed columns: {cols_str}."
+                                        st.session_state.show_popup = True
+                                        st.session_state.popup_message_info = { 'type': 'update_success', 'id': selected_id, 'message': custom_message }
+                                    else:
+                                        st.warning(f"Record for ID {selected_id} was not found for update.")
+                                        st.session_state.show_confirm_dialog = False
+                                        st.rerun()
+                            except Exception as e:
+                                st.error(f"An error occurred: {e}")
+                                import traceback
+                                st.code(traceback.format_exc())
+                                st.session_state.show_confirm_dialog = False
+                                st.stop()  # Stop instead of rerun to see the error
+                                
+                            st.session_state.show_confirm_dialog = False
+                            st.rerun()
+            with col2:
+                if st.button("Cancel", key="confirm_cancel"):
+                    st.session_state.show_confirm_dialog = False
+                    st.rerun()
         return
     
     # Check for primary update confirmation dialog
