@@ -7,14 +7,11 @@ import streamlit as st
 from snowflake.core import Root
 from snowflake.snowpark import Session
 from snowflake.snowpark.functions import col
-from snowflake.cortex import Complete
 from urllib.parse import urlparse
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from perplexity import Perplexity
 
-# Set Perplexity API key from Streamlit secrets
-os.environ["PERPLEXITY_API_KEY"] = st.secrets["perplexity"]["api_key"]
 
 # --- SNOWFLAKE CONNECTION FOR STREAMLIT COMMUNITY CLOUD ---
 @st.cache_resource
@@ -35,7 +32,7 @@ def get_snowflake_session():
     return Session.builder.configs(connection_parameters).create()
 
 
-def get_affiliation_priorities_from_llm(session, selected_hco_data: dict, affiliations: list) -> dict:
+def get_affiliation_priorities_from_llm(session, selected_hcp_data: dict, affiliations: list) -> dict:
     """
     Calls Snowflake Cortex REST API with structured JSON output to rank HCO affiliations by priority.
     
@@ -46,12 +43,12 @@ def get_affiliation_priorities_from_llm(session, selected_hco_data: dict, affili
     
     # Build the prompt for the LLM
     selected_info = f"""
-Selected Healthcare Organization:
-- Name: {selected_hco_data.get('Name', 'N/A')}
-- Address: {selected_hco_data.get('Address Line1', '')} {selected_hco_data.get('Address Line2', '')}
-- City: {selected_hco_data.get('City', 'N/A')}
-- State: {selected_hco_data.get('State', 'N/A')}
-- ZIP: {selected_hco_data.get('ZIP', 'N/A')}
+Selected Healthcare Provider:
+- Name: {selected_hcp_data.get('Name', 'N/A')}
+- Address: {selected_hcp_data.get('Address Line1', '')} {selected_hcp_data.get('Address Line2', '')}
+- City: {selected_hcp_data.get('City', 'N/A')}
+- State: {selected_hcp_data.get('State', 'N/A')}
+- ZIP: {selected_hcp_data.get('ZIP', 'N/A')}
 """
     
     affiliations_info = "Affiliations to rank:\n"
@@ -66,7 +63,7 @@ Affiliation {idx + 1} (Key: {key}):
 - Source: {aff.get('SOURCE', 'N/A')}
 """
     
-    prompt = f"""You are a healthcare data analyst. Analyze the following selected healthcare organization and its potential affiliations. 
+    prompt = f"""You are a healthcare data analyst. Analyze the following selected healthcare provider and its potential affiliations. 
 Rank each affiliation by priority (1 being highest priority/best match) based on:
 1. Geographic proximity (same city, state, ZIP code area)
 2. Name similarity or relationship (parent organization, same health system)
@@ -169,7 +166,7 @@ Only return the JSON object, no other text. Use the exact keys provided for each
 
 
 # Set page to wide layout
-st.set_page_config(layout="wide", page_title="HCO Data Steward")
+st.set_page_config(layout="wide", page_title="HCP Data Steward")
 
 # --- POPUP FUNCTIONS ---
 def show_popup_without_button(popup_placeholder, message_type, record_info):
@@ -208,6 +205,9 @@ def show_popup_without_button(popup_placeholder, message_type, record_info):
         if message_type == "update_success" and 'message' in record_info:
             title = "Update Successful! ✅"
             message = record_info['message']
+        elif message_type == "insert_success" and 'message' in record_info:
+            title = "Insert Successful! ✅"
+            message = record_info['message']
         elif message_type == "primary_success":
             title = "Primary Affiliation Updated! ✅"
             message = f"Primary Parent is set with HCO ID: {record_info.get('hco_id')}."
@@ -231,47 +231,225 @@ def show_popup_without_button(popup_placeholder, message_type, record_info):
     st.rerun()
 
 
+# --- NEW, SELF-CONTAINED RAG CHATBOT FUNCTION ---
+def render_rag_chatbot(session):
+    """
+    This function encapsulates all the logic and UI for the
+    'Chat with your Documents' RAG chatbot.
+    """
+    # RAG App Constants
+    NUM_CHUNKS = 3
+    CORTEX_SEARCH_DATABASE = "CORTEX_ANALYST_HCK"
+    CORTEX_SEARCH_SCHEMA = "PUBLIC"
+    CORTEX_SEARCH_SERVICE = "CC_SEARCH_SERVICE_CS"
+    COLUMNS = ["chunk", "chunk_index", "relative_path", "category"]
+    try:
+        root = Root(session)
+        svc = (
+            root.databases[CORTEX_SEARCH_DATABASE]
+            .schemas[CORTEX_SEARCH_SCHEMA]
+            .cortex_search_services[CORTEX_SEARCH_SERVICE]
+        )
+    except Exception as e:
+        st.error(f"Could not connect to the Cortex Search Service. Error: {e}")
+        st.stop()
+
+    # Helper Functions nested inside
+    def config_options():
+        st.sidebar.title("Chatbot Configuration")
+        st.sidebar.selectbox(
+            "Select your model:",
+            ("mistral-large", "llama3-70b", "llama3-8b", "snowflake-arctic"),
+            key="model_name",
+        )
+        categories = session.sql(
+            "select category from docs_chunks_table group by category"
+        ).collect()
+        cat_list = ["ALL"]
+        for cat in categories:
+            cat_list.append(cat.CATEGORY)
+        st.sidebar.selectbox("Filter by product type:", cat_list, key="category_value")
+        st.session_state.rag = st.sidebar.toggle(
+            "Use documents as context?", value=True
+        )
+
+    def get_similar_chunks_search_service(query):
+        if st.session_state.category_value == "ALL":
+            response = svc.search(query, COLUMNS, limit=NUM_CHUNKS)
+        else:
+            filter_obj = {"@eq": {"category": st.session_state.category_value}}
+            response = svc.search(query, COLUMNS, filter=filter_obj, limit=NUM_CHUNKS)
+        return response.json()
+
+    def create_prompt(myquestion):
+        if st.session_state.rag:
+            retrieved_chunks_dict = get_similar_chunks_search_service(myquestion)
+            context_for_prompt = json.dumps(retrieved_chunks_dict)
+            prompt = f"""
+                         You are an expert chat assistant that extracts information from the CONTEXT provided
+                         between <context> and </context> tags. Be concise and do not hallucinate.
+                         If you don´t have the information just say so.
+                         <context>{context_for_prompt}</context>
+                         <question>{myquestion}</question>
+                         Answer:
+                         """
+            relative_paths = set(
+                item["relative_path"]
+                for item in retrieved_chunks_dict.get("results", [])
+            )
+        else:
+            prompt = f"Question: {myquestion} Answer:"
+            relative_paths = "None"
+        return prompt, relative_paths
+
+    def complete(myquestion):
+        prompt, relative_paths = create_prompt(myquestion)
+        full_cmd = f"SELECT snowflake.cortex.complete('{st.session_state.model_name}', $${prompt}$$) as response"
+        df_response = session.sql(full_cmd).collect()
+        return df_response, relative_paths
+
+    # RAG UI
+    st.subheader("Chat with your Documents")
+    docs_available = session.sql("ls @docs").collect()
+    list_docs = [doc["name"] for doc in docs_available]
+    st.dataframe(list_docs, use_container_width=True)
+    config_options()
+    question = st.text_input(
+        "Ask a question about the documents:",
+        placeholder="e.g., What is the provider's primary specialty?",
+        label_visibility="collapsed",
+    )
+
+    if question:
+        with st.spinner("Generating answer..."):
+            response, relative_paths = complete(question)
+            res_text = response[0].RESPONSE
+            st.markdown(res_text)
+            if relative_paths != "None":
+                with st.expander("Related Documents"):
+                    for path in relative_paths:
+                        cmd2 = f"select GET_PRESIGNED_URL(@docs, '{path}', 360) as URL_LINK from directory(@docs)"
+                        df_url_link = session.sql(cmd2).to_pandas()
+                        url_link = df_url_link.iloc[0]["URL_LINK"]
+                        display_url = f"Doc: [{path}]({url_link})"
+                        st.markdown(display_url)
+
+
 # --- ENRICHMENT & COMPARISON PAGE FUNCTION ---
-def render_enrichment_page(session, selected_hco_df):
+def render_enrichment_page(session, selected_hcp_df):
     # --- BACK BUTTON LOGIC ---
     _, btn_col = st.columns([4, 1])
     with btn_col:
         if st.button("⬅️ Back to Search Results"):
             st.session_state.current_view = "main"
-            st.session_state.selected_hco_id = None
+            st.session_state.selected_hcp_id = None
             st.rerun()
 
     # --- Custom CSS for the "Web Report" Look ---
     st.markdown(
-    """
-        <style>
-            div[data-testid="stHorizontalBlock"]:has(div.cell-content),
-            div[data-testid="stHorizontalBlock"]:has(div.hco-cell) { border-bottom: 1px solid #e6e6e6; }
-            div[data-testid="stHorizontalBlock"]:has(div.cell-content):hover,
-            div[data-testid="stHorizontalBlock"]:has(div.hco-cell):hover { background-color: #f8f9fa; }
-            .cell-content, .hco-cell { padding: 0.3rem 0.5rem; font-size: 14px; display: flex; align-items: center; height: 48px; }
-            .report-header, .hco-header { font-weight: bold; color: #4f4f4f; padding: 0.5rem; }
-            .hco-header { border-bottom: 2px solid #ccc; }
-            .report-proposed-column { border-left: 2px solid #D3D3D3; padding-left: 1.5rem; }
-            .checkbox-container { width: 100%; text-align: center; }
-            .checkbox-container div[data-testid="stCheckbox"] { padding-top: 12px; }
-            div[data-testid="stExpander"] button { margin-top: -1rem; }
-            .hco-cell div[data-testid="stButton"] button { padding: 0.2rem 0.5rem; font-size: 12px; height: 30px; }
-        </style>
+        """
+    <style>
+        div[data-testid="stHorizontalBlock"]:has(div.cell-content),
+        div[data-testid="stHorizontalBlock"]:has(div.hco-cell) { border-bottom: 1px solid #e6e6e6; }
+        div[data-testid="stHorizontalBlock"]:has(div.cell-content):hover,
+        div[data-testid="stHorizontalBlock"]:has(div.hco-cell):hover { background-color: #f8f9fa; }
+        .cell-content, .hco-cell { padding: 0.3rem 0.5rem; font-size: 14px; display: flex; align-items: center; height: 48px; }
+        .report-header, .hco-header { font-weight: bold; color: #4f4f4f; padding: 0.5rem; }
+        .hco-header { border-bottom: 2px solid #ccc; }
+        .report-proposed-column { border-left: 2px solid #D3D3D3; padding-left: 1.5rem; }
+        .checkbox-container { width: 100%; text-align: center; }
+        .checkbox-container div[data-testid="stCheckbox"] { padding-top: 12px; }
+        div[data-testid="stExpander"] button { margin-top: -1rem; }
+        .hco-cell div[data-testid="stButton"] button { padding: 0.2rem 0.5rem; font-size: 12px; height: 30px; }
+    </style>
     """,
         unsafe_allow_html=True,
     )
 
-    # --- API Data Enrichment Function ---
+    # --- LLM Data Enrichment Function ---
+    # --- LLM Data Enrichment Function (UPDATED TO FIND ALL SOURCES) ---
+    # --- LLM Data Enrichment Function (UPDATED TO EXTRACT URLS) ---
     @st.cache_data(ttl=600)
-    def get_enriched_data_from_api(_session, hcp_df, search_query=None):
+    def get_enriched_data_from_llm(_session, hcp_df, search_query=None):
         if hcp_df.empty:
             return pd.DataFrame()
     
-        selected_record = hcp_df.iloc[0].to_dict()
-
+        MODEL_NAME = "mistral-large"
+        NUM_CHUNKS = 30
+        CORTEX_SEARCH_DATABASE = "CORTEX_ANALYST_HCK"
+        CORTEX_SEARCH_SCHEMA = "PUBLIC"
+        CORTEX_SEARCH_SERVICE = "CC_SEARCH_SERVICE_CS"
+        COLUMNS = ["chunk", "chunk_index", "relative_path", "category"]
+    
         try:
-            api_response = get_consolidated_data_for_hco(selected_record, model_name="sonar-pro", use_pro_search=True, search_query=search_query)
+            root = Root(_session)
+            svc = (
+                root.databases[CORTEX_SEARCH_DATABASE]
+                .schemas[CORTEX_SEARCH_SCHEMA]
+                .cortex_search_services[CORTEX_SEARCH_SERVICE]
+            )
+        except Exception as e:
+            st.error(
+                f"Could not connect to the Cortex Search Service for enrichment. Error: {e}"
+            )
+            return pd.DataFrame()
+    
+        selected_record = hcp_df.iloc[0].to_dict()
+        if search_query is None:
+            cortex_search_query = f"{selected_record.get('NAME', '')} NPI {selected_record.get('NPI', '')}"
+        else:
+            cortex_search_query = search_query
+    
+        # --- PROMPT UPDATED TO EXTRACT URLS AS SOURCE ---
+        enrichment_prompt = f"""
+        You are a data extraction assistant. Your only job is to read the document text provided  in the <context> tags and your own LLM training data information available,  and then find the exact values for the fields in the required JSON structure.
+        Do not invent or infer information. If you cannot find a value for a specific field, return null.
+    
+        Your response MUST be ONLY a single, valid JSON object string.
+        The JSON object must follow this exact structure:
+        {{
+            "ID": "{selected_record.get('ID', '')}", "Name": "...", "Name_Score": "...", "Name_Source": ["..."],
+            "NPI": 0, "Address Line1": "...", "Address Line1_Score": "...", "Address Line1_Source": ["..."],
+            "Address Line2": "...", "Address Line2_Score": "...", "Address Line2_Source": ["..."],
+            "City": "...", "City_Score": "...", "City_Source": ["..."], "State": "...", "State_Score": "...", "State_Source": ["..."],
+            "ZIP": "...", "ZIP_Score": "...", "ZIP_Source": ["..."],
+    
+            "HCO 1 ID": "...", "HCO 1 Name": "...", "HCO 1 NPI": "...", "HCO 1 Address Line1": "...", "HCO 1 Address Line2": "...", "HCO 1 City": "...", "HCO 1 State": "...", "HCO 1 ZIP": "...",
+            "HCO 2 ID": "...", "HCO 2 Name": "...", "HCO 2 NPI": "...", "HCO 2 Address Line1": "...", "HCO 2 Address Line2": "...", "HCO 2 City": "...", "HCO 2 State": "...", "HCO 2 ZIP": "...",
+            "HCO 3 ID": null, "HCO 3 Name": null, "HCO 3 NPI": null, "HCO 3 Address Line1": null, "HCO 3 Address Line2": null, "HCO 3 City": null, "HCO 3 State": null, "HCO 3 ZIP": null
+        }}
+    
+        --- IMPORTANT RULES FOR SCORING & SOURCES ---
+        - The context contains text from different documents about an HCP(Health Care Provider). Your task is to find the source URL (like `https://npiregistry.cms.hhs.gov/...`) within the text chunks you use.
+        - For each proposed value, you MUST populate the corresponding *_Source field with a JSON array containing all full URLs you find that support the value.
+        - If you cannot find a specific URL for a piece of data, return an array containing the document's 'category' as a fallback.
+        - If no sources are found, return an empty array [].
+        - The *_Score represents your confidence of proposed information being correct verified through multiple sources for the HCP. For eg: For an HCP given in context, if you are able to verify it's demographic information from multiple sources then score would be high compared to if the information is only fetched from one source. 
+        -  Also in the *_Score fields, populate the confidence score in percentage(out of 100) followed by '%' and then followed by your reason for assigning that score to the respective field value proposed.
+        """
+
+        # Connect --> Connection string
+    
+        try:
+            response = svc.search(search_query, COLUMNS, limit=NUM_CHUNKS)
+            context_for_prompt = json.dumps(response.json())
+            final_prompt_with_context = f"""
+            You are an expert assistant. Extract information from the CONTEXT to answer the QUESTION.
+            <context>{context_for_prompt}</context>
+            <question>{enrichment_prompt}</question>
+            """
+            full_cmd = f"SELECT snowflake.cortex.complete('{MODEL_NAME}', $${final_prompt_with_context}$$) as response"
+            #st.write(full_cmd)
+
+            api_response = get_consolidated_data_for_hcp(selected_record, model_name="sonar-pro", use_pro_search=True)
+            # hcp_data = standardize_value_lengths(api_response.hcp_data)
+            # df_response = pd.DataFrame(hcp_data)
+                                              
+            # if df_response.empty:
+            #     st.warning("The AI assistant returned an empty response.")
+            #     return pd.DataFrame()
+            # else:
+            #     return df_response
             return api_response
         
         except Exception as e:
@@ -279,59 +457,24 @@ def render_enrichment_page(session, selected_hco_df):
             return pd.DataFrame()
 
     # --- Main Application Logic for Enrichment Page ---
+    #st.title("📑 Current vs. Proposed Comparison Report")
     st.markdown("<h3>📑 Current vs. Proposed Comparison Report</h3>", unsafe_allow_html=True)
     
 
-    if selected_hco_df.empty:
+    if selected_hcp_df.empty:
         st.warning("No HCP data was provided for enrichment.")
         st.stop()
         
-    selected_record = selected_hco_df.iloc[0]
-    
-    # Helper to get value with fallback to HCO_ prefixed column
-    def get_val(record, key):
-        val = record.get(key)
-        if val is None or (isinstance(val, float) and pd.isna(val)):
-            val = record.get(f"HCO_{key}")
-        return val if val is not None and not (isinstance(val, float) and pd.isna(val)) else ''
-    
-    current_data_dict = { 'ID': get_val(selected_record, 'ID'), 'Name': get_val(selected_record, 'NAME'), 'NPI': get_val(selected_record, 'NPI'), 'Address Line1': get_val(selected_record, 'ADDRESS1'), 'Address Line2': get_val(selected_record, 'ADDRESS2'), 'City': get_val(selected_record, 'CITY'), 'State': get_val(selected_record, 'STATE'), 'ZIP': get_val(selected_record, 'ZIP') }
+    selected_record = selected_hcp_df.iloc[0]
+    current_data_dict = { 'ID': selected_record.get('ID', ''), 'Name': selected_record.get('NAME', ''), 'NPI': selected_record.get('NPI', ''), 'Address Line1': selected_record.get('ADDRESS1', ''), 'Address Line2': selected_record.get('ADDRESS2', ''), 'City': selected_record.get('CITY', ''), 'State': selected_record.get('STATE', ''), 'ZIP': selected_record.get('ZIP', '') }
     current_df = pd.DataFrame([current_data_dict])
 
     # Placeholder for a potential dialog to display over the main content
     dialog_placeholder = st.empty()
     
-    # Render reason popup as a modal overlay if the state is set
-    if st.session_state.get('show_reason_popup'):
-        popup_data = st.session_state.get('reason_popup_data', {})
-        
-        # Modal overlay styling - use f-string with pre-extracted values
-        hco_name = popup_data.get('hco_name', 'Unknown')
-        priority = popup_data.get('priority', '-')
-        reason = popup_data.get('reason', 'No reason available')
-        
-        # Use Streamlit's dialog decorator if available (Streamlit 1.33+)
-        @st.dialog("🎯 Priority Reasoning")
-        def show_reason_dialog():
-            st.markdown(f"**Organization:** {hco_name}")
-            st.markdown(f"<span style='display: inline-block; background-color: #4CAF50; color: white; padding: 0.25rem 0.75rem; border-radius: 15px; font-weight: bold;'>Priority {priority}</span>", unsafe_allow_html=True)
-            st.markdown("---")
-            st.markdown(f"""
-            <div style='background-color: #f8f9fa; padding: 1rem; border-radius: 5px; border-left: 4px solid #1f77b4;'>
-                <strong>Reason:</strong><br>{reason}
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("")
-            if st.button("Close", key="close_dialog_btn", use_container_width=True):
-                st.session_state.show_reason_popup = False
-                st.session_state.reason_popup_data = None
-                st.rerun()
-        
-        show_reason_dialog()
-    
     # Render confirmation dialog if the state is set
     if st.session_state.get('show_confirm_dialog'):
-        is_new_record = st.session_state.selected_hco_id == 'empty_record' or str(get_val(selected_record, 'ID')) in ['', 'N/A']
+        is_new_record = st.session_state.selected_hcp_id == 'empty_record' or str(selected_record.get('ID')) in ['', 'N/A']
         with dialog_placeholder.container():
             action_text = "insert a new record" if is_new_record else "update the selected fields"
             st.warning(f"Are you sure you want to {action_text}? This action cannot be undone.", icon="⚠️")
@@ -349,13 +492,13 @@ def render_enrichment_page(session, selected_hco_df):
             changes_to_display = []
             for field_label, db_col in provider_mapping.items():
                 if field_label in approved_df_cols:
-                    current_val = get_val(selected_record, db_col)
+                    current_val = selected_record.get(db_col)
                     proposed_val = proposed_record.get(field_label)
                     changes_to_display.append([field_label, current_val, proposed_val])
             
             if changes_to_display:
                 st.markdown("---")
-                st.markdown(f"**Changes to be applied for Account ID: `{get_val(selected_record, 'ID')}`**")
+                st.markdown(f"**Changes to be applied for Account ID: `{selected_record.get('ID')}`**")
                 
                 # Use st.columns to simulate a two-column table for styling
                 cols_header = st.columns([2, 2, 2])
@@ -376,9 +519,7 @@ def render_enrichment_page(session, selected_hco_df):
             # Table 2: All other record details (not being changed)
             remaining_details_to_display = []
             all_fields = list(selected_record.index)
-            # Include both ID and HCO_ID variants in change_fields
-            change_fields = [provider_mapping[col] for col in approved_df_cols] + ["ID", "HCO_ID"]
-            change_fields += [f"HCO_{provider_mapping[col]}" for col in approved_df_cols]
+            change_fields = [provider_mapping[col] for col in approved_df_cols] + ["ID"]
             
             for field in all_fields:
                 if field not in change_fields:
@@ -389,20 +530,18 @@ def render_enrichment_page(session, selected_hco_df):
                 remaining_df = pd.DataFrame(remaining_details_to_display, columns=["Field", "Value"])
                 st.dataframe(remaining_df, hide_index=True, use_container_width=True)
 
-            if not is_new_record:    
+            if not is_new_record:
                 st.markdown("---")
+            # --- END MODIFIED ---
             
-            # Use st.columns for horizontal buttons - INSIDE the container
+            # Use st.columns for horizontal buttons
             col1, col2 = st.columns([1, 1])
             confirm_btn_label = "Yes, Insert" if is_new_record else "Yes, Update"
             with col1:
                 if st.button(confirm_btn_label, key="confirm_yes"):
                     approved_df_cols = st.session_state.get('approved_cols', [])
-                    selected_id = st.session_state.selected_hco_id
-                    
-                    st.write(f"DEBUG: approved_df_cols = {approved_df_cols}")
-                    st.write(f"DEBUG: is_new_record = {is_new_record}")
-                    
+                    selected_id = st.session_state.selected_hcp_id
+                                        
                     if not approved_df_cols:
                         st.info("No fields were selected. Please go back and select fields.")
                         st.session_state.show_confirm_dialog = False
@@ -418,33 +557,24 @@ def render_enrichment_page(session, selected_hco_df):
                                 assignments = {}
                                 proposed_record = st.session_state.proposed_record
                                 columns_list = []
-                                
-                                st.write(f"DEBUG: proposed_record = {proposed_record}")
-                                
+                                                                
                                 for col_name in approved_df_cols:
-                                    db_col_name = db_column_map.get(col_name)
-                                    st.write(f"DEBUG: col_name={col_name}, db_col_name={db_col_name}")
-                                    if db_col_name:
+                                    db_col_name = db_column_map.get(col_name)                                    if db_col_name:
                                         new_value = proposed_record.get(col_name)
                                         if hasattr(new_value, 'item'): new_value = new_value.item()
                                         assignments[db_col_name] = new_value
                                         columns_list.append(db_col_name)
 
-                                st.write(f"DEBUG: columns_list = {columns_list}")
-                                st.write(f"DEBUG: assignments = {assignments}")
-
-                                DATABASE, SCHEMA, YOUR_TABLE_NAME = "CORTEX_ANALYST_HCK", "PUBLIC", "HCO"
+                                DATABASE, SCHEMA, YOUR_TABLE_NAME = "CORTEX_ANALYST_HCK", "PUBLIC", "NPI"
                                 target_table = session.table(f'"{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"')
                                 
                                 if is_new_record:
                                     # Get max ID and add 1 for new record
-                                    # HCO table uses string IDs in format 'SHA_000006494'
+                                    # NPI table uses string IDs in format 'SHA_000006494'
                                     max_id_result = session.sql(f'SELECT MAX(CAST(REPLACE(ID, \'SHA_\', \'\') AS INT)) AS MAX_NUM FROM "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" WHERE ID LIKE \'SHA_%\'').collect()
                                     max_num = max_id_result[0].MAX_NUM if max_id_result[0].MAX_NUM else 0
                                     new_num = int(max_num) + 1
-                                    new_id = f"SHA_{new_num:09d}"  # Format as SHA_000000001
-                                    st.write(f"DEBUG: new_id = {new_id}")
-                                    
+                                    new_id = f"SHA_{new_num:09d}"  # Format as SHA_000000001                                    
                                     # Add ID to columns and assignments
                                     columns_list.insert(0, "ID")
                                     assignments["ID"] = new_id
@@ -452,20 +582,14 @@ def render_enrichment_page(session, selected_hco_df):
                                     # INSERT new record using SQL
                                     col_names = ", ".join(columns_list)
                                     col_values = ", ".join([f"'{str(assignments[c])}'" if assignments[c] is not None else "NULL" for c in columns_list])
-                                    insert_sql = f'INSERT INTO "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" ({col_names}) VALUES ({col_values})'
-                                    st.write(f"DEBUG: insert_sql = {insert_sql}")
-                                    session.sql(insert_sql).collect()
+                                    insert_sql = f'INSERT INTO "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" ({col_names}) VALUES ({col_values})'                                    session.sql(insert_sql).collect()
                                     st.write("DEBUG: INSERT executed successfully")
                                     cols_str = ", ".join(columns_list)
                                     custom_message = f"New record inserted successfully with ID: {new_id}. Columns: {cols_str}."
                                     st.session_state.show_popup = True
                                     st.session_state.popup_message_info = { 'type': 'insert_success', 'id': new_id, 'message': custom_message }
                                 else:
-                                    # UPDATE existing record
-                                    st.write(f"DEBUG: Updating ID={selected_id}, assignments={assignments}")
-                                    update_result = target_table.update(assignments, col("ID") == selected_id)
-                                    st.write(f"DEBUG: update_result={update_result}")
-                                    if update_result.rows_updated > 0:
+                                    # UPDATE existing record                                    update_result = target_table.update(assignments, col("ID") == selected_id)                                    if update_result.rows_updated > 0:
                                         cols_str = ", ".join(columns_list)
                                         custom_message = f"Record for ID: {selected_id} updated successfully. Changed columns: {cols_str}."
                                         st.session_state.show_popup = True
@@ -492,6 +616,7 @@ def render_enrichment_page(session, selected_hco_df):
     # Check for primary update confirmation dialog
     if st.session_state.get('show_primary_confirm_dialog'):
         with dialog_placeholder.container():
+            # ... (rest of the code remains the same)
             st.warning("Are you sure you want to change the primary affiliation? This will update the main record.", icon="⚠️")
             
             # --- MODIFIED: Display primary affiliation change in a vertical table ---
@@ -506,8 +631,8 @@ def render_enrichment_page(session, selected_hco_df):
             primary_change_df = pd.DataFrame({
                 "Field": ["ID", "Name", "Current Primary HCO", "Proposed Primary HCO"],
                 "Value": [
-                    get_val(selected_record, 'ID'),
-                    get_val(selected_record, 'NAME'),
+                    selected_record.get('ID'),
+                    selected_record.get('NAME'),
                     f"ID: {current_primary_id} ({current_primary_name})",
                     f"ID: {new_primary_id} ({new_primary_name})"
                 ]
@@ -519,7 +644,7 @@ def render_enrichment_page(session, selected_hco_df):
             with col1:
                 if st.button("Yes, Set Primary", key="confirm_primary_yes"):
                     new_primary_id = st.session_state.primary_hco_id
-                    selected_id = st.session_state.selected_hco_id
+                    selected_id = st.session_state.selected_hcp_id
                     
                     with st.spinner("Updating primary affiliation in Snowflake..."):
                         try:
@@ -544,14 +669,14 @@ def render_enrichment_page(session, selected_hco_df):
                     st.session_state.show_primary_confirm_dialog = False
                     st.rerun()
         return
-    #end of Placeholder for a potential dialog to display over the main content
+#end of Placeholder for a potential dialog to display over the main content
 
     with st.spinner("🚀 Contacting AI Assistant for Data Enrichment..."):
         # Get user's search query for web search flow (when no record exists in DB)
         user_search_query = st.session_state.get('web_search_query', None)
-        api_response = get_enriched_data_from_api(session, selected_hco_df, search_query=user_search_query)
-        proposed_hcp_data_df = pd.DataFrame(api_response['hco_data'])
-        proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hco_affiliation_data'])
+        api_response = get_enriched_data_from_llm(session, selected_hcp_df, search_query=user_search_query)
+        proposed_hcp_data_df = pd.DataFrame(api_response['hcp_data'])
+        proposed_hcp_affiliation_data_df = pd.DataFrame(api_response['hcp_affiliation_data'])
 
     try:
         if current_df.empty or proposed_hcp_data_df.empty:
@@ -567,12 +692,12 @@ def render_enrichment_page(session, selected_hco_df):
         selected_id = int(raw_id) if raw_id != 'N/A' and pd.notna(raw_id) else 'N/A'
     except (ValueError, TypeError):
         selected_id = 'N/A'
-    
     current_record = current_df.iloc[0]
     proposed_hcp_data_record = proposed_hcp_data_df.iloc[0]
 
 
-    #session state for proposed record
+#session state for proposed record
+
     st.session_state.proposed_hcp_data_record = proposed_hcp_data_record
     
     if "demographic_expander_state" not in st.session_state:
@@ -584,22 +709,17 @@ def render_enrichment_page(session, selected_hco_df):
         if st.session_state.get(f"approve_{selected_id}_{col_name}", False):
             st.session_state.demographic_expander_state = True
             break
-    #end of session state for proposed record
+#end of session state for proposed record
 
-    # Display header - handle empty record case
-    display_name = current_record.get('Name', '') or current_record.get('NAME', '') or 'New Record (Web Search)'
+    #st.header(f"Comparing for ID: {selected_id} | {current_record.get('Name', '')} | NPI: {current_record.get('NPI', 'N/A')}")
     st.markdown(
-        f"<h5>Comparing for ID: {selected_id} | {display_name}</h5>", 
+        f"<h5>Comparing for ID: {selected_id} | {current_record.get('Name', '')} | NPI: {current_record.get('NPI', 'N/A')}</h5>", 
         unsafe_allow_html=True
     )
 
-    # Helper to get current_record value (current_df uses keys like 'Name', 'Address Line1')
-    def get_current_val(key):
-        val = current_record.get(key)
-        return val if val is not None and val != '' else ''
     
-    #provider_info_change
-    provider_info_title = f"Address information of : {current_record.get('Name', '') or current_record.get('HCO_NAME', 'N/A')}"
+#provider_info_change
+    provider_info_title = f"Demographic information of : {current_record.get('Name', 'N/A')} (NPI: {current_record.get('NPI', 'N/A')})"
     
     with st.expander(provider_info_title, expanded=st.session_state.demographic_expander_state): 
         
@@ -611,7 +731,7 @@ def render_enrichment_page(session, selected_hco_df):
         provider_mapping = { "Name": "Name", "Address Line 1": "Address Line1", "Address Line 2": "Address Line2", "City": "City", "State": "State", "ZIP Code": "ZIP" }
 
         for field_label, col_name in provider_mapping.items():
-            current_val = get_current_val(col_name) or ""
+            current_val = current_record.get(col_name, "")
             proposed_val = proposed_hcp_data_record.get(col_name, "")
             score = proposed_hcp_data_record.get(f"{col_name}_Score", 0)
             
@@ -656,7 +776,7 @@ def render_enrichment_page(session, selected_hco_df):
 
         st.write("")
         _, btn_col = st.columns([5, 1])
-        is_new_record = selected_id == 'empty_record' or str(get_val(selected_record, 'ID')) in ['', 'N/A']
+        is_new_record = selected_id == 'N/A' or st.session_state.selected_hcp_id == 'empty_record'
         btn_label = "Insert Record 💾" if is_new_record else "Update Record 💾"
         with btn_col:
             if st.button(btn_label, type="primary", key=f"update_btn_{selected_id}"):
@@ -672,14 +792,15 @@ def render_enrichment_page(session, selected_hco_df):
                     st.session_state.proposed_record = proposed_hcp_data_record.to_dict() if hasattr(proposed_hcp_data_record, 'to_dict') else proposed_hcp_data_record
                     st.rerun()
                 else:
-                    st.info(f"No fields were selected for update for ID {selected_id}.")
+                    st.info(f"No fields were selected for ID {selected_id}.")
 
     st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
     
-    hco_affiliation_title = f"HCO Affiliation information of : {current_record.get('Name', '') or current_record.get('HCO_NAME', 'N/A')}"
+    hco_affiliation_title = f"HCO Affiliation information of : {current_record.get('Name', 'N/A')} (NPI: {current_record.get('NPI', 'N/A')})"
     
     with st.expander(hco_affiliation_title, expanded=False):
         
+        # Updated headers to include Priority and Reason columns
         hco_headers = ["Status", "SOURCE", "HCO ID", "HCO NAME", "HCO ADDRESS", "HCO CITY", "HCO STATE", "HCO ZIP", "Priority", "Reason"]
         header_cols = st.columns([1.5, 1.5, 1.2, 2.5, 2, 1.2, 1.2, 1.2, 0.8, 1])
         for col_obj, header_name in zip(header_cols, hco_headers):
@@ -688,15 +809,14 @@ def render_enrichment_page(session, selected_hco_df):
         primary_id_val = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
         true_primary_hco_id = int(primary_id_val) if pd.notna(primary_id_val) else None
         
-        hco_id = current_record.get("ID") or current_record.get("HCO_ID")
+        hcp_npi = current_record.get("NPI")
         db_affiliations_df = pd.DataFrame()
-        if hco_id:
-            query = f"SELECT * FROM OUTLET_HCO_AFFILIATION WHERE HCO_ID = '{hco_id}'"
+        if hcp_npi:
+            query = f"SELECT * FROM HCP_HCO_AFFILIATION WHERE HCP_NPI = '{hcp_npi}'"
             db_affiliations_df = session.sql(query).to_pandas()
 
         # Build ai_found_hcos from proposed_hcp_affiliation_data_df
         ai_found_hcos = []
-
         if not proposed_hcp_affiliation_data_df.empty:
             for index, row in proposed_hcp_affiliation_data_df.iterrows():
                 hco_name = row.get('HCO_Name')
@@ -714,13 +834,10 @@ def render_enrichment_page(session, selected_hco_df):
                 hco_id = row.get('HCO_ID')
                 if not hco_id: continue
                 all_affiliations[hco_id] = {
-                    "SOURCE": "DB data",
-                    "HCO ID": hco_id, 
-                    "HCO NAME": row.get('OUTLET_NAME'),
-                    "HCO ADDRESS": f"{row.get('OUTLET_ADDRESS1', '')}, {row.get('OUTLET_ADDRESS2', '')}".strip(", "),
-                    "HCO CITY": row.get('OUTLET_CITY'), 
-                    "HCO STATE": row.get('OUTLET_STATE'),
-                    "HCO ZIP": row.get('OUTLET_ZIP')
+                    "SOURCE": "HCOS data", "HCP_NPI": row.get('HCP_NPI'),
+                    "HCO ID": hco_id, "HCO NAME": row.get('HCO_NAME'),
+                    "HCO ADDRESS": f"{row.get('HCO_ADDRESS1', '')}, {row.get('HCO_ADDRESS2', '')}".strip(", "),
+                    "HCO CITY": row.get('HCO_CITY'), "HCO STATE": row.get('HCO_STATE'), "HCO ZIP": row.get('HCO_ZIP'),
                 }
 
         for idx, hco in enumerate(ai_found_hcos):
@@ -734,16 +851,16 @@ def render_enrichment_page(session, selected_hco_df):
         if not all_affiliations:
             st.info("No HCO affiliations were found.")
         else:
-            # Create a cache key based on selected HCO ID and affiliation keys
-            selected_hco_id = current_data_dict.get('ID', '')
+            # Create a cache key based on selected HCP ID and affiliation keys
+            selected_hcp_id_for_cache = current_data_dict.get('ID', '')
             affiliation_keys = sorted([str(k) for k in all_affiliations.keys()])
-            cache_key = f"{selected_hco_id}_{'_'.join(affiliation_keys[:5])}"  # Use first 5 keys for cache key
+            cache_key = f"{selected_hcp_id_for_cache}_{'_'.join(affiliation_keys[:5])}"
             
             # Initialize priority cache in session state if not exists
             if 'priority_rankings_cache' not in st.session_state:
                 st.session_state.priority_rankings_cache = {}
             
-            # Check if we already have cached priority rankings for this HCO
+            # Check if we already have cached priority rankings for this HCP
             priority_rankings = st.session_state.priority_rankings_cache.get(cache_key, {})
             
             # Show button to analyze priorities if not already analyzed
@@ -751,7 +868,7 @@ def render_enrichment_page(session, selected_hco_df):
                 st.markdown("---")
                 col1, col2, col3 = st.columns([2, 2, 2])
                 with col2:
-                    if st.button("🎯 Analyze Priority Order with AI", key=f"analyze_priorities_{selected_hco_id}", use_container_width=True):
+                    if st.button("🎯 Analyze Priority Order with AI", key=f"analyze_priorities_{selected_hcp_id_for_cache}", use_container_width=True):
                         st.session_state[f'analyze_priorities_clicked_{cache_key}'] = True
                         st.rerun()
                 
@@ -794,7 +911,7 @@ def render_enrichment_page(session, selected_hco_df):
             sorted_affiliations = sorted(all_affiliations.items(), key=get_priority_for_sort)
             
             for hco_id, hco_data in sorted_affiliations:
-                # Match header columns: 11 columns total
+                # Match header columns: 10 columns total
                 row_cols = st.columns([1.5, 1.5, 1.2, 2.5, 2, 1.2, 1.2, 1.2, 0.8, 1])
                 
                 is_primary = False
@@ -846,7 +963,9 @@ def render_enrichment_page(session, selected_hco_df):
                     else:
                         st.write("-")
 
-    #----------end of provider_info_change
+#----------end of provider_info_change
+
+
 
 # --- MAIN DATA STEWARD APP PAGE FUNCTION ---
 def render_main_page(session):
@@ -866,7 +985,7 @@ def render_main_page(session):
     DATABASE = "CORTEX_ANALYST_HCK"
     SCHEMA = "PUBLIC"
     STAGE = "HACKATHON"
-    FILE = "HCO_MODEL.yaml"
+    FILE = "HCK_MODEL.yaml"
 
     def send_message(prompt: str) -> dict:
         """
@@ -901,16 +1020,9 @@ def render_main_page(session):
             raise Exception(f"Failed request with status {resp.status_code}: {resp.text}")
 
     def process_message(prompt: str) -> None:
-        # Clear previous messages and results
         st.session_state.messages.clear()
         st.session_state.results_df = None
-
-        st.session_state.provider_info_change = False
-
-        # Clear previous hcp_id selection
-        st.session_state.selected_hco_id = None
-
-        # Add user message to session state
+        st.session_state.selected_hcp_id = None
         st.session_state.messages.append(
             {"role": "user", "content": [{"type": "text", "text": prompt}]}
         )
@@ -919,8 +1031,6 @@ def render_main_page(session):
                 response = send_message(prompt=prompt)
                 question_item = {"type": "text", "text": prompt.strip()}
                 response["message"]["content"].insert(0, question_item)
-
-                # Add assistant message to session state
                 st.session_state.messages.append(
                     {"role": "assistant", "content": response["message"]["content"]}
                 )
@@ -943,92 +1053,43 @@ def render_main_page(session):
                 f'This is our interpretation of your question : "{interpretation_clean}"'
             )
 
-    def ensure_join_in_sql(sql: str) -> str:
-        """
-        Ensures the SQL always includes a LEFT JOIN with OUTLET_HCO_AFFILIATION.
-        If Cortex only queries HCO table, wrap it to include the join.
-        """
-        sql_upper = sql.upper()
-        # Check if join is already present
-        if "OUTLET_HCO_AFFILIATION" in sql_upper or "LEFT OUTER JOIN" in sql_upper or "LEFT JOIN" in sql_upper:
-            return sql
-        
-        # Extract WHERE clause if present
-        where_clause = ""
-        if " WHERE " in sql_upper:
-            where_idx = sql_upper.index(" WHERE ")
-            where_clause = sql[where_idx:]
-            # Remove ORDER BY from where_clause for re-adding later
-            if " ORDER BY " in where_clause.upper():
-                order_idx = where_clause.upper().index(" ORDER BY ")
-                where_clause = where_clause[:order_idx]
-        
-        # Extract the name filter from WHERE clause
-        name_filter = ""
-        if "NAME ILIKE" in sql_upper:
-            import re
-            match = re.search(r"NAME\s+ILIKE\s+'([^']+)'", sql, re.IGNORECASE)
-            if match:
-                name_filter = match.group(1)
-        
-        if name_filter:
-            # Build a new query with guaranteed join
-            new_sql = f"""
-            SELECT h.ID, h.NAME, h.ADDRESS1, h.ADDRESS2, h.CITY, h.STATE, h.ZIP, h.COUNTRY,
-                   o.OUTLET_ID, o.OUTLET_NAME, o.OUTLET_ADDRESS1, o.OUTLET_CITY, o.OUTLET_STATE, o.OUTLET_ZIP
-            FROM CORTEX_ANALYST_HCK.PUBLIC.HCO h
-            LEFT OUTER JOIN CORTEX_ANALYST_HCK.PUBLIC.OUTLET_HCO_AFFILIATION o ON h.ID = o.HCO_ID
-            WHERE h.NAME ILIKE '{name_filter}'
-            ORDER BY h.NAME
-            """
-            return new_sql.strip()
-        
-        return sql
-
     def display_results_table(content: list):
         sql_item_found = False
         for item in content:
             if item["type"] == "sql":
                 sql_item_found = True
                 with st.spinner("Running SQL..."):
-                    original_sql = item["statement"]
-                    sql_to_run = ensure_join_in_sql(original_sql)
-                    df = session.sql(sql_to_run).to_pandas()
+                    df = session.sql(item["statement"]).to_pandas()
                     if not df.empty:
                         st.session_state.results_df = df
                         st.write("Please select a record from the table to proceed:")
-                        
-                        # Define column sizes tuple (must match number of headers)
-                        col_sizes = (0.8, 0.8, 2, 2, 1.5, 1)
+                        # Define Column Sizes & Heading Names
+                        cols = st.columns((0.8, 0.8, 1.2, 1, 2, 1, 0.5))
+                        headers = ["Select", "ID", "Name", "NPI", "Address", "City", "State"]
 
-                        # Define column heading names
-                        cols = st.columns(col_sizes)
-                        headers = ["Select", "ID", "Name", "Address", "City", "State"]
-                        
-                        # Render table headers
                         for col_header, header_name in zip(cols, headers):
                             col_header.markdown(f"**{header_name}**")
 
-                        # Render table rows
                         for index, row in df.iterrows():
-                            # Check for ID column with various possible names from Cortex
-                            row_id = row.get("ID") if "ID" in row.index else row.get("HCO_ID")
-                            if row_id is None or pd.isna(row_id):
-                                row_id = index  # Fallback to index if ID is NULL
-                            is_selected = row_id == st.session_state.get("selected_hco_id")
-                            row_cols = st.columns(col_sizes)
+                            row_id = row.get("ID")
+                            if row_id is None:
+                                continue
+                            is_selected = row_id == st.session_state.get("selected_hcp_id")
+                            row_cols = st.columns((0.8, 0.8, 1.2, 1, 2, 1, 0.5))
 
                             if is_selected:
                                 row_cols[0].write("🔘")
                             else:
                                 if row_cols[0].button("", key=f"select_{row_id}"):
-                                    st.session_state.selected_hco_id = row_id
+                                    st.session_state.selected_hcp_id = row_id
                                     st.rerun()
+
                             row_cols[1].write(row_id)
-                            row_cols[2].write(row.get("NAME") or row.get("HCO_NAME", ""))
-                            row_cols[3].write(row.get("ADDRESS1") or row.get("HCO_ADDRESS1", "N/A"))
-                            row_cols[4].write(row.get("CITY") or row.get("HCO_CITY", "N/A"))
-                            row_cols[5].write(row.get("STATE") or row.get("HCO_STATE", "N/A"))
+                            row_cols[2].write(row.get("NAME", ""))
+                            row_cols[3].write(row.get("NPI", "N/A"))
+                            row_cols[4].write(row.get("ADDRESS1", "N/A"))
+                            row_cols[5].write(row.get("CITY", "N/A"))
+                            row_cols[6].write(row.get("STATE", "N/A"))
                     else:
                         st.info("We couldn't find any records matching your search.", icon="ℹ️")
                         st.markdown("")
@@ -1036,7 +1097,7 @@ def render_main_page(session):
                             # Create a default empty record for enrichment
                             st.session_state.empty_record_for_enrichment = {
                                 'ID': 'N/A',
-                                'NAME': st.session_state.get('web_search_query', '').title().strip(),
+                                'NAME': st.session_state.get('last_prompt', '').title().strip(),
                                 'NPI': '',
                                 'ADDRESS1': '',
                                 'ADDRESS2': '',
@@ -1044,17 +1105,11 @@ def render_main_page(session):
                                 'STATE': '',
                                 'ZIP': '',
                                 'COUNTRY': '',
-                                'PRIMARY_AFFL_HCO_ACCOUNT_ID': None,
-                                'OUTLET_ID': None,
-                                'OUTLET_NAME': '',
-                                'OUTLET_ADDRESS1': '',
-                                'OUTLET_CITY': '',
-                                'OUTLET_STATE': '',
-                                'OUTLET_ZIP': ''
+                                'PRIMARY_AFFL_HCO_ACCOUNT_ID': None
                             }
                             # Store the search query for web search context
                             st.session_state.web_search_query = st.session_state.get('last_prompt', '')
-                            st.session_state.selected_hco_id = 'empty_record'
+                            st.session_state.selected_hcp_id = 'empty_record'
                             st.session_state.current_view = "enrichment_page"
                             st.rerun()
         if not sql_item_found:
@@ -1064,24 +1119,26 @@ def render_main_page(session):
                 # Create a default empty record for enrichment
                 st.session_state.empty_record_for_enrichment = {
                     'ID': 'N/A',
-                    'NAME': None,
-                    'ADDRESS1': None,
-                    'ADDRESS2': None,
-                    'CITY': None,
-                    'STATE': None,
-                    'ZIP': None,
-                    'COUNTRY': None
+                    'NAME': st.session_state.get('last_prompt', '').title().strip(),
+                    'NPI': '',
+                    'ADDRESS1': '',
+                    'ADDRESS2': '',
+                    'CITY': '',
+                    'STATE': '',
+                    'ZIP': '',
+                    'COUNTRY': '',
+                    'PRIMARY_AFFL_HCO_ACCOUNT_ID': None
                 }
                 # Store the search query for web search context
                 st.session_state.web_search_query = st.session_state.get('last_prompt', '')
-                st.session_state.selected_hco_id = 'empty_record'
+                st.session_state.selected_hcp_id = 'empty_record'
                 st.session_state.current_view = "enrichment_page"
                 st.rerun()
 
     # --- MAIN INPUT LOGIC ---
     freeze_container = st.container(border=True)
     with freeze_container:
-        user_input_text = st.chat_input("Search for an HCO Account")
+        user_input_text = st.chat_input("Search for an Account")
         current_prompt = user_input_text
 
         if current_prompt and current_prompt != st.session_state.get("last_prompt"):
@@ -1101,25 +1158,18 @@ def render_main_page(session):
                 st.subheader("Search Results")
                 display_results_table(content=assistant_messages[-1]["content"])
 
-            # Helper to safely get and format value (handles both column naming conventions)
+            # Helper to safely get and format value
             def get_safe_value(record, key):
-                # Try original key first, then with HCO_ prefix
                 value = record.get(key)
-                if value is None or (isinstance(value, float) and pd.isna(value)):
-                    value = record.get(f"HCO_{key}")
                 return str(value) if pd.notna(value) and value is not None else 'N/A'
             
 
-            # 2. Selected Record Details (Only appears when selected_hco_id is set)
-            if st.session_state.get("selected_hco_id") and st.session_state.get("results_df") is not None:
-                # Handle both ID and HCO_ID column names
-                id_col = "ID" if "ID" in st.session_state.results_df.columns else "HCO_ID"
-                # Convert both to string for comparison to avoid type mismatch
-                selected_id_str = str(st.session_state.selected_hco_id)
+ # 2. Selected Record Details (Only appears when selected_hcp_id is set)
+            if st.session_state.get("selected_hcp_id") and st.session_state.get("results_df") is not None:
+                
                 selected_record_df = st.session_state.results_df[
-                    st.session_state.results_df[id_col].astype(str) == selected_id_str
+                    st.session_state.results_df["ID"] == st.session_state.selected_hcp_id
                 ]
-
                 
                 if not selected_record_df.empty:
                     
@@ -1130,49 +1180,54 @@ def render_main_page(session):
                     
                     # --- Left Detail Column: Current Demographic Details ---
                     with details_col_left:
-                        st.subheader("Current HCO Address Details")
+                        st.subheader("Current Demographic Details")
                         
                         # This border container holds the custom 2x2 layout
                         with st.container(border=True):
                             
                             # ID and Name in the required structure (single line)
-                            hcp_id = get_safe_value(selected_record, 'ID') if 'ID' in selected_record.index else get_safe_value(selected_record, 'HCO_ID')
-                            hcp_name = get_safe_value(selected_record, 'NAME') if 'NAME' in selected_record.index else get_safe_value(selected_record, 'HCO_NAME')
+                            hcp_id = get_safe_value(selected_record, 'ID')
+                            hcp_name = get_safe_value(selected_record, 'NAME')
                             st.markdown(f'**ID:** {hcp_id} - {hcp_name}', unsafe_allow_html=True)
-                            
+                            #st.markdown("---")
                             st.markdown("<hr style='margin-top: 0; margin-bottom: 0; border-top: 1px solid #ccc;'>", unsafe_allow_html=True)
 
                             # Define the fields for the new two-column layout
-                            left_fields = [                                
+                            identity_fields = [
+                                ("Prefix", "PREFIX"),
+                                ("First Name", "FIRST_NM"),
+                                ("Middle Name", "MIDDLE_NM"),
+                                ("Last Name", "LAST_NM"),
+                                ("Suffix", "SUFFIX"),
+                                ("Degree", "DEGREE"),
+                            ]
+                            address_fields = [
                                 ("Address Line 1", "ADDRESS1"),
                                 ("Address Line 2", "ADDRESS2"),
-                                ("City", "CITY"),]
-                            right_fields = [
+                                ("City", "CITY"),
                                 ("State", "STATE"),
                                 ("ZIP", "ZIP"),
                                 ("Country", "COUNTRY")
                             ]
 
                             # Create two internal columns for the key-value pairs
-                            left_col_address, right_col_address = st.columns(2)
+                            col_identity, col_address = st.columns(2)
 
                             # Render Identity Fields (Left Column)
-                            for label, key in left_fields:
+                            for label, key in identity_fields:
                                 value = get_safe_value(selected_record, key)
-                                display_value = value if value and value.strip() else 'N/A'
-                                left_col_address.markdown(
+                                col_identity.markdown(
                                     f'<div class="detail-key">{label}:</div>'
-                                    f'<div class="detail-value">{display_value}</div>',
+                                    f'<div class="detail-value">{value}</div>',
                                     unsafe_allow_html=True
                                 )
 
-                            # Render Address Fields
-                            for label, key in right_fields:
+                            # Render Address Fields (Right Column)
+                            for label, key in address_fields:
                                 value = get_safe_value(selected_record, key)
-                                display_value = value if value and value.strip() else 'N/A'
-                                right_col_address.markdown(
+                                col_address.markdown(
                                     f'<div class="detail-key">{label}:</div>'
-                                    f'<div class="detail-value">{display_value}</div>',
+                                    f'<div class="detail-value">{value}</div>',
                                     unsafe_allow_html=True
                                 )
 
@@ -1181,15 +1236,15 @@ def render_main_page(session):
                         st.subheader("Primary HCO Affiliation Details")
                         with st.container(border=True):
                             hco_col1, hco_col2 = st.columns(2)
-                            primary_hco_id = selected_record.get("OUTLET_ID")
                             
-                            hco_col1.markdown(f'<div class="detail-key">Parent ID:</div><div class="detail-value">{get_safe_value(selected_record, "OUTLET_ID")}</div>', unsafe_allow_html=True)
+                            primary_hco_id = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
+                            
+                            hco_col1.markdown(f'<div class="detail-key">HCP ID:</div><div class="detail-value">{get_safe_value(selected_record, "ID")}</div>', unsafe_allow_html=True)
                             
                             hco_id_val = str(int(primary_hco_id)) if pd.notna(primary_hco_id) and primary_hco_id is not None else "N/A"
-
-                            hco_col2.markdown(f'<div class="detail-key">Parent HCO NPI:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
+                            hco_col2.markdown(f'<div class="detail-key">Primary HCO NPI:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
                             
-                            hco_col1.markdown(f'<div class="detail-key">Parent Name:</div><div class="detail-value">{get_safe_value(selected_record, "OUTLET_NAME")}</div>', unsafe_allow_html=True)
+                            hco_col1.markdown(f'<div class="detail-key">HCP Name:</div><div class="detail-value">{get_safe_value(selected_record, "NAME")}</div>', unsafe_allow_html=True)
                             # Removed the line for "Primary HCO Name" as requested.
                             
                             
@@ -1221,8 +1276,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "results_df" not in st.session_state:
     st.session_state.results_df = None
-if "selected_hco_id" not in st.session_state:
-    st.session_state.selected_hco_id = None
+if "selected_hcp_id" not in st.session_state:
+    st.session_state.selected_hcp_id = None
 if "current_view" not in st.session_state:
     st.session_state.current_view = "main"
 if "last_prompt" not in st.session_state:
@@ -1235,12 +1290,6 @@ if "show_confirm_dialog" not in st.session_state:
     st.session_state.show_confirm_dialog = False
 if "show_primary_confirm_dialog" not in st.session_state:
     st.session_state.show_primary_confirm_dialog = False
-if "show_reason_popup" not in st.session_state:
-    st.session_state.show_reason_popup = False
-if "reason_popup_data" not in st.session_state:
-    st.session_state.reason_popup_data = None
-if "priority_reasons" not in st.session_state:
-    st.session_state.priority_reasons = {}
 
 session = get_snowflake_session()
 os.environ["PERPLEXITY_API_KEY"] = st.secrets["perplexity"]["api_key"]
@@ -1249,16 +1298,16 @@ client = Perplexity()
 
 # provider_mapping = { "Name": "Name", "Address Line 1": "Address Line1", "Address Line 2": "Address Line2", "City": "City", "State": "State", "ZIP Code": "ZIP" }
 
-class HCOData(BaseModel):
+class HCPData(BaseModel):
     Name: list[str]
     address_line_1: List[str] = Field(..., alias="Address Line1")
     address_line_2: List[str] = Field(..., alias="Address Line2")
     ZIP: list[str]
     City: list[str]
     State: list[str]
-    Country: list[str]
 
-class HCOAffiliationData(BaseModel):
+class HCPAffiliationData(BaseModel):
+    NPI: list[str]
     HCO_ID: list[str]
     HCO_Name: list[str]
     HCO_Address1: list[str]
@@ -1267,82 +1316,83 @@ class HCOAffiliationData(BaseModel):
     HCO_ZIP: list[str]
 
 class SearchResponse(BaseModel):
-    hco_data: HCOData
-    hco_affiliation_data: HCOAffiliationData
+    hcp_data: HCPData
+    hcp_affiliation_data: HCPAffiliationData
     
 
-def get_consolidated_data_for_hco(hco_data, model_name="sonar", use_pro_search=False, search_query=None):
+def get_consolidated_data_for_hcp(hcp_data, model_name="sonar", use_pro_search=False, search_query=None):
     # Extract key info for better search - handle both dict and pandas Series
-    if hasattr(hco_data, 'to_dict'):
-        hco_data = hco_data.to_dict()
+    if hasattr(hcp_data, 'to_dict'):
+        hcp_data = hcp_data.to_dict()
     
-    # Helper to get value with fallback to HCO_ prefixed key
-    def get_hco_val(key):
-        if isinstance(hco_data, dict):
-            val = hco_data.get(key, '')
-            if not val:
-                val = hco_data.get(f'HCO_{key}', '')
+    # Helper to get value with fallback
+    def get_hcp_val(key):
+        if isinstance(hcp_data, dict):
+            val = hcp_data.get(key, '')
             return val
-        return str(hco_data)
+        return str(hcp_data)
     
     # Use search_query as the name if NAME field is empty (for Web Search flow)
-    hco_name = get_hco_val('NAME') or search_query or ''
-    hco_address1 = get_hco_val('ADDRESS1')
-    hco_address2 = get_hco_val('ADDRESS2')
-    hco_city = get_hco_val('CITY')
-    hco_state = get_hco_val('STATE')
-    hco_zip = get_hco_val('ZIP')
+    hcp_name = get_hcp_val('NAME') or search_query or ''
+    hcp_npi = get_hcp_val('NPI')
+    hcp_address1 = get_hcp_val('ADDRESS1')
+    hcp_city = get_hcp_val('CITY')
+    hcp_state = get_hcp_val('STATE')
+    hcp_zip = get_hcp_val('ZIP')
     
     user_query = f"""
-    You are a healthcare data research specialist. Search the web thoroughly for information about this US healthcare organization:
+    You are a healthcare data research specialist. Search the web thoroughly for information about this US healthcare provider:
     
-    **Organization to Research:**
-    - Name: {hco_name}
-    - Address Line 1: {hco_address1}
-    - Address Line 2: {hco_address2}
-    - City: {hco_city}
-    - State: {hco_state}
-    - ZIP: {hco_zip}
+    **Provider to Research:**
+    - Name: {hcp_name}
+    - NPI: {hcp_npi}
+    - Address Line 1: {hcp_address1}
+    - City: {hcp_city}
+    - State: {hcp_state}
+    - ZIP: {hcp_zip}
 
     **IMPORTANT INSTRUCTIONS:**
     1. You MUST search the web and find COMPLETE information for ALL fields requested below
-    2. Do NOT return "N/A" for address fields if the organization exists - search harder to find the actual address
-    3. For parent organizations, search their official website, Wikipedia, or business directories to find their headquarters address
-    4. If you find a parent company name, you MUST also find and return their complete headquarters address
+    2. Do NOT return "N/A" for address fields if the provider exists - search harder to find the actual address
+    3. For affiliated organizations, search their official website, NPI Registry, or healthcare directories to find their complete address
+    4. If you find an affiliated HCO name, you MUST also find and return their complete address
 
-    **Part 1 - Health Care Organization Details (verify/update from web sources):**
-    Search for the current, verified information about "{hco_name}":
-    - Name: Full official name of the healthcare organization
-    - Address Line 1: Street address (e.g., "123 Main Street")
+    **Part 1 - Provider Demographics (verify/update from web sources):**
+    Search for the current, verified information about "{hcp_name}":
+    - Name: Full name of the doctor/provider
+    - Address Line 1: Current practice street address (e.g., "123 Main Street")
     - Address Line 2: Suite/unit number (or empty string if none)
     - City: City name in ALL CAPS (e.g., "CHARLOTTE")
     - State: 2-letter US state code (e.g., TX, CA, NY)
     - ZIP: 5-digit zipcode (e.g., "28202")
 
-    **Part 2 - Parent/Owning Healthcare Organization Details:**
-    Search for the PARENT organization, corporate owner, or health system that owns or operates "{hco_name}".
+    **Part 2 - Practice/Hospital Affiliation Details:**
+    Search for the healthcare organization(s) where "{hcp_name}" practices.
     
     Search queries to try:
-    - "{hco_name} owned by"
-    - "{hco_name} parent company"
-    - "{hco_name} health system"
-    - "{hco_name} corporate headquarters"
-    - "[Parent company name] headquarters address"
+    - "{hcp_name} doctor hospital affiliation"
+    - "{hcp_name} NPI {hcp_npi}" on npiregistry.cms.hhs.gov
+    - "{hcp_name} practices at"
+    - "{hcp_name} affiliated with"
+    - "{hcp_name} hospital privileges"
     
-    Look for terms like "owned by", "operated by", "part of", "subsidiary of", "member of", "division of", or "affiliated with".
+    Look for terms like "practices at", "affiliated with", "hospital privileges", "medical staff at", "employed by" and such terms which convey the information .
     
-    For the parent organization, you MUST provide:
-    - HCO_ID: The NPI number of the parent organization (10 digits). Search "[parent name] NPI number" or check nppes.cms.hhs.gov. Use "N/A" only if truly not findable.
-    - HCO_Name: Full name of the parent healthcare system, hospital network, or corporate owner (e.g., "Advocate Health", "HCA Healthcare", "CommonSpirit Health", "Ascension")
-    - HCO_Address1: REQUIRED - Headquarters street address of the parent organization. Search "[parent name] headquarters address" or check their website Contact/About page. Example: "3075 Highland Parkway"
-    - HCO_City: REQUIRED - Headquarters city in ALL CAPS. Example: "DOWNERS GROVE"
-    - HCO_State: REQUIRED - 2-letter state code of headquarters. Example: "IL"
-    - HCO_ZIP: REQUIRED - 5-digit zipcode of headquarters. Example: "60515"
+    For each affiliated organization, you MUST provide:
+    - NPI: The HCP (Health Care Provider)'s NPI number (10 digits). Use the provided {hcp_npi} if available, or search npiregistry.cms.hhs.gov
+    - HCO_ID: The organization's NPI number (10 digits). Search "[organization name] NPI number" or check nppes.cms.hhs.gov. Use "N/A" only if truly not findable.
+    - HCO_Name: Full name of the hospital, medical group, health system, or clinic where they practice (e.g., "Advocate Health", "HCA Healthcare", "CommonSpirit Health", "Ascension")
+    - HCO_Address1: REQUIRED - Street address of the practice/hospital location. Search "[organization name] address" or check their website Contact page. Example: "3075 Highland Parkway"
+    - HCO_City: REQUIRED - City in ALL CAPS. Example: "DOWNERS GROVE"
+    - HCO_State: REQUIRED - 2-letter state code. Example: "IL"
+    - HCO_ZIP: REQUIRED - 5-digit zipcode. Example: "60515"
 
     **CRITICAL:** 
-    - If you find a parent company name like "Advocate Health", you MUST search for "Advocate Health headquarters address" and return the complete address.
-    - Do NOT leave address fields as "N/A" if the parent organization exists - their headquarters address is publicly available.
-    - Only return "N/A" for HCO fields if the organization truly has no parent (it IS the top-level parent).
+    - If you find an affiliated organization name, you MUST search for "[organization name] address" and return the complete address.
+    - Do NOT leave address fields as "N/A" if the organization exists - their address is publicly available.
+    - Only return "N/A" for HCO fields if the provider truly has no known affiliations.
+    - Return actual found data, not "N/A" unless truly not findable after thorough search.
+    - Never return the name of the HCO as the HCO_Name - only return the actual organization name.
     """
 
     completion = client.chat.completions.create(
@@ -1389,19 +1439,16 @@ elif st.session_state.current_view == "enrichment_page":
         show_popup_without_button(popup_placeholder, st.session_state.popup_message_info['type'], st.session_state.popup_message_info) 
 
     # Check if this is an empty record flow (from "Still want to proceed with Web Search?" button)
-    if st.session_state.selected_hco_id == 'empty_record' and st.session_state.get('empty_record_for_enrichment'):
+    if st.session_state.selected_hcp_id == 'empty_record' and st.session_state.get('empty_record_for_enrichment'):
         # Create a DataFrame from the empty record
         empty_record = st.session_state.empty_record_for_enrichment
         selected_record_df = pd.DataFrame([empty_record])
         
         if not st.session_state.show_popup:
             render_enrichment_page(session, selected_record_df)
-    elif st.session_state.selected_hco_id and st.session_state.results_df is not None:
-        # Handle both ID and HCO_ID column names
-        id_col = "ID" if "ID" in st.session_state.results_df.columns else "HCO_ID"
-        selected_id_str = str(st.session_state.selected_hco_id)
+    elif st.session_state.selected_hcp_id and st.session_state.results_df is not None:
         selected_record_df = st.session_state.results_df[
-            st.session_state.results_df[id_col].astype(str) == selected_id_str
+            st.session_state.results_df["ID"] == st.session_state.selected_hcp_id
         ]
 
         # This function call now needs to be wrapped in an `if` to prevent re-rendering issues
