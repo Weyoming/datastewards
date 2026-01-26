@@ -438,8 +438,11 @@ def render_enrichment_page(session, selected_hco_df):
                                 
                                 if is_new_record:
                                     # Get max ID and add 1 for new record
-                                    max_id_result = session.sql(f'SELECT COALESCE(MAX(ID), 0) AS MAX_ID FROM "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"').collect()
-                                    new_id = int(max_id_result[0].MAX_ID) + 1
+                                    # HCO table uses string IDs in format 'SHA_000006494'
+                                    max_id_result = session.sql(f'SELECT MAX(CAST(REPLACE(ID, \'SHA_\', \'\') AS INT)) AS MAX_NUM FROM "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" WHERE ID LIKE \'SHA_%\'').collect()
+                                    max_num = max_id_result[0].MAX_NUM if max_id_result[0].MAX_NUM else 0
+                                    new_num = int(max_num) + 1
+                                    new_id = f"SHA_{new_num:09d}"  # Format as SHA_000000001
                                     st.write(f"DEBUG: new_id = {new_id}")
                                     
                                     # Add ID to columns and assignments
