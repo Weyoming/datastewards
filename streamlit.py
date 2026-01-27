@@ -546,6 +546,7 @@ def render_enrichment_page(session, selected_hcp_df):
                                             col_values_list.append("NULL")
                                     col_values = ", ".join(col_values_list)
                                     insert_sql = f'INSERT INTO "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" ({col_names}) VALUES ({col_values})'
+                                    st.write(f"DEBUG: insert_sql = {insert_sql}")
                                     session.sql(insert_sql).collect()
                                     cols_str = ", ".join(columns_list)
                                     custom_message = f"New record inserted successfully with ID: {new_id}. Columns: {cols_str}."
