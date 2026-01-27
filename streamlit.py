@@ -1056,7 +1056,7 @@ def render_main_page(session):
                             # Create a default empty record for enrichment
                             st.session_state.empty_record_for_enrichment = {
                                 'ID': 'N/A',
-                                'NAME': st.session_state.get('last_prompt', '').title().strip(),
+                                'NAME': '',
                                 'NPI': '',
                                 'ADDRESS1': '',
                                 'ADDRESS2': '',
@@ -1078,7 +1078,7 @@ def render_main_page(session):
                 # Create a default empty record for enrichment
                 st.session_state.empty_record_for_enrichment = {
                     'ID': 'N/A',
-                    'NAME': st.session_state.get('last_prompt', '').title().strip(),
+                    'NAME': '',
                     'NPI': '',
                     'ADDRESS1': '',
                     'ADDRESS2': '',
