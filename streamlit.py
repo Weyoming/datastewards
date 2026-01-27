@@ -398,6 +398,34 @@ def render_enrichment_page(session, selected_hcp_df):
     # Placeholder for a potential dialog to display over the main content
     dialog_placeholder = st.empty()
     
+    # Render reason popup as a modal overlay if the state is set
+    if st.session_state.get('show_reason_popup'):
+        popup_data = st.session_state.get('reason_popup_data', {})
+        
+        # Modal overlay styling - use f-string with pre-extracted values
+        hco_name = popup_data.get('hco_name', 'Unknown')
+        priority = popup_data.get('priority', '-')
+        reason = popup_data.get('reason', 'No reason available')
+        
+        # Use Streamlit's dialog decorator if available (Streamlit 1.33+)
+        @st.dialog("🎯 Priority Reasoning")
+        def show_reason_dialog():
+            st.markdown(f"**Organization:** {hco_name}")
+            st.markdown(f"<span style='display: inline-block; background-color: #4CAF50; color: white; padding: 0.25rem 0.75rem; border-radius: 15px; font-weight: bold;'>Priority {priority}</span>", unsafe_allow_html=True)
+            st.markdown("---")
+            st.markdown(f"""
+            <div style='background-color: #f8f9fa; padding: 1rem; border-radius: 5px; border-left: 4px solid #1f77b4;'>
+                <strong>Reason:</strong><br>{reason}
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("")
+            if st.button("Close", key="close_dialog_btn", use_container_width=True):
+                st.session_state.show_reason_popup = False
+                st.session_state.reason_popup_data = None
+                st.rerun()
+        
+        show_reason_dialog()
+    
     # Render confirmation dialog if the state is set
     if st.session_state.get('show_confirm_dialog'):
         is_new_record = st.session_state.selected_hcp_id == 'empty_record' or str(selected_record.get('ID')) in ['', 'N/A']
