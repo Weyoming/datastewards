@@ -1242,20 +1242,32 @@ def render_main_page(session):
                         with st.container(border=True):
                             hco_col1, hco_col2 = st.columns(2)
                             
-                            primary_hco_id = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
-                            hco_id_val = str(primary_hco_id) if pd.notna(primary_hco_id) and primary_hco_id is not None else "N/A"
-                            
-                            # Fetch HCO details from database if primary_hco_id exists
+                            hco_id_val = "N/A"
                             hco_name_val = "N/A"
                             hco_npi_val = "N/A"
-                            if pd.notna(primary_hco_id) and primary_hco_id is not None:
-                                try:
+                            
+                            # First try PRIMARY_AFFL_HCO_ACCOUNT_ID from NPI table
+                            primary_hco_id = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
+                            
+                            # If no primary set, fetch first affiliation from HCP_HCO_AFFILIATION table
+                            hcp_id = selected_record.get("ID")
+                            try:
+                                if pd.notna(primary_hco_id) and primary_hco_id is not None:
+                                    # Use the primary HCO ID to get details
+                                    hco_id_val = str(primary_hco_id)
                                     hco_query = session.sql(f"SELECT NAME, NPI FROM HCO WHERE ID = '{primary_hco_id}'").collect()
                                     if hco_query:
                                         hco_name_val = hco_query[0].NAME if hco_query[0].NAME else "N/A"
                                         hco_npi_val = str(hco_query[0].NPI) if hco_query[0].NPI else "N/A"
-                                except:
-                                    pass
+                                else:
+                                    # Fetch from HCP_HCO_AFFILIATION table
+                                    aff_query = session.sql(f"SELECT HCO_ID, HCO_NAME, HCO_NPI FROM HCP_HCO_AFFILIATION WHERE HCP_ACCT_ID = '{hcp_id}' LIMIT 1").collect()
+                                    if aff_query:
+                                        hco_id_val = str(aff_query[0].HCO_ID) if aff_query[0].HCO_ID else "N/A"
+                                        hco_name_val = aff_query[0].HCO_NAME if aff_query[0].HCO_NAME else "N/A"
+                                        hco_npi_val = str(aff_query[0].HCO_NPI) if aff_query[0].HCO_NPI else "N/A"
+                            except:
+                                pass
                             
                             hco_col1.markdown(f'<div class="detail-key">HCO ID:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
                             hco_col2.markdown(f'<div class="detail-key">HCO NPI:</div><div class="detail-value">{hco_npi_val}</div>', unsafe_allow_html=True)
