@@ -1249,8 +1249,13 @@ def render_main_page(session):
                             # First try PRIMARY_AFFL_HCO_ACCOUNT_ID from NPI table
                             primary_hco_id = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
                             
-                            # If no primary set, fetch first affiliation from HCP_HCO_AFFILIATION table
+                            # Get HCP identifiers for affiliation lookup
                             hcp_id = selected_record.get("ID")
+                            hcp_npi = selected_record.get("NPI")
+                            
+                            # DEBUG
+                            st.write(f"DEBUG: hcp_id={hcp_id}, hcp_npi={hcp_npi}, primary_hco_id={primary_hco_id}")
+                            
                             try:
                                 if pd.notna(primary_hco_id) and primary_hco_id is not None:
                                     # Use the primary HCO ID to get details
@@ -1260,14 +1265,18 @@ def render_main_page(session):
                                         hco_name_val = hco_query[0].NAME if hco_query[0].NAME else "N/A"
                                         hco_npi_val = str(hco_query[0].NPI) if hco_query[0].NPI else "N/A"
                                 else:
-                                    # Fetch from HCP_HCO_AFFILIATION table
-                                    aff_query = session.sql(f"SELECT HCO_ID, HCO_NAME, HCO_NPI FROM HCP_HCO_AFFILIATION WHERE HCP_ACCT_ID = '{hcp_id}' LIMIT 1").collect()
+                                    # Fetch from HCP_HCO_AFFILIATION table using HCP_NPI
+                                    aff_sql = f"SELECT HCO_ID, HCO_NAME, HCO_NPI FROM HCP_HCO_AFFILIATION WHERE HCP_NPI = '{hcp_npi}' LIMIT 1"
+                                    st.write(f"DEBUG: aff_sql={aff_sql}")
+                                    aff_query = session.sql(aff_sql).collect()
+                                    st.write(f"DEBUG: aff_query result count={len(aff_query)}")
                                     if aff_query:
+                                        st.write(f"DEBUG: aff_query[0]={aff_query[0]}")
                                         hco_id_val = str(aff_query[0].HCO_ID) if aff_query[0].HCO_ID else "N/A"
                                         hco_name_val = aff_query[0].HCO_NAME if aff_query[0].HCO_NAME else "N/A"
                                         hco_npi_val = str(aff_query[0].HCO_NPI) if aff_query[0].HCO_NPI else "N/A"
-                            except:
-                                pass
+                            except Exception as e:
+                                st.write(f"DEBUG: Exception={e}")
                             
                             hco_col1.markdown(f'<div class="detail-key">HCO ID:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
                             hco_col2.markdown(f'<div class="detail-key">HCO NPI:</div><div class="detail-value">{hco_npi_val}</div>', unsafe_allow_html=True)
