@@ -13,6 +13,64 @@ from pydantic import BaseModel, Field
 from perplexity import Perplexity
 
 
+# --- HELPER FUNCTIONS FOR SET AS PRIMARY (BYPASS FLOW FIX) ---
+def check_affiliation_exists(session, hcp_npi: str, hco_id: str) -> bool:
+    """
+    Check if an affiliation record already exists in HCP_HCO_AFFILIATION table.
+    """
+    if not hcp_npi or not hco_id:
+        return False
+    
+    try:
+        query = f"""
+            SELECT COUNT(*) as CNT 
+            FROM HCP_HCO_AFFILIATION 
+            WHERE HCP_NPI = '{hcp_npi}' AND HCO_ID = '{hco_id}'
+        """
+        result = session.sql(query).collect()
+        return result[0].CNT > 0 if result else False
+    except Exception as e:
+        st.warning(f"Error checking affiliation: {e}")
+        return False
+
+
+def insert_affiliation_record(session, hcp_npi: str, hco_data: dict) -> bool:
+    """
+    Insert a new affiliation record into HCP_HCO_AFFILIATION table.
+    """
+    try:
+        hco_id = hco_data.get('HCO ID', hco_data.get('HCO_ID', ''))
+        hco_name = hco_data.get('HCO NAME', hco_data.get('HCO_Name', ''))
+        hco_address1 = hco_data.get('HCO ADDRESS', hco_data.get('HCO_Address1', ''))
+        hco_city = hco_data.get('HCO CITY', hco_data.get('HCO_City', ''))
+        hco_state = hco_data.get('HCO STATE', hco_data.get('HCO_State', ''))
+        hco_zip = hco_data.get('HCO ZIP', hco_data.get('HCO_ZIP', ''))
+        
+        # Clean values - escape single quotes
+        def clean_val(val):
+            if val is None:
+                return ''
+            return str(val).replace("'", "''")
+        
+        insert_sql = f"""
+            INSERT INTO HCP_HCO_AFFILIATION (HCP_NPI, HCO_ID, HCO_NAME, HCO_ADDRESS1, HCO_CITY, HCO_STATE, HCO_ZIP)
+            VALUES (
+                '{clean_val(hcp_npi)}',
+                '{clean_val(hco_id)}',
+                '{clean_val(hco_name)}',
+                '{clean_val(hco_address1)}',
+                '{clean_val(hco_city)}',
+                '{clean_val(hco_state)}',
+                '{clean_val(hco_zip)}'
+            )
+        """
+        session.sql(insert_sql).collect()
+        return True
+    except Exception as e:
+        st.error(f"Error inserting affiliation record: {e}")
+        return False
+
+
 # --- SNOWFLAKE CONNECTION FOR STREAMLIT COMMUNITY CLOUD ---
 @st.cache_resource
 def get_snowflake_session():
@@ -581,9 +639,20 @@ def render_enrichment_page(session, selected_hcp_df):
     
     # Check for primary update confirmation dialog
     if st.session_state.get('show_primary_confirm_dialog'):
+        # Check if this is a new HCP from bypass flow
+        is_new_hcp = st.session_state.selected_hcp_id == 'empty_record'
+        
         with dialog_placeholder.container():
-            # ... (rest of the code remains the same)
-            st.warning("Are you sure you want to change the primary affiliation? This will update the main record.", icon="⚠️")
+            # Different warning text based on whether this is a new HCP
+            if is_new_hcp:
+                st.warning(
+                    "This is a new provider record. Setting primary affiliation will:\n"
+                    "1. Create a new affiliation record in HCP_HCO_AFFILIATION table\n"
+                    "2. Set this as the primary affiliation in the NPI table",
+                    icon="⚠️"
+                )
+            else:
+                st.warning("Are you sure you want to change the primary affiliation? This will update the main record.", icon="⚠️")
             
             # --- MODIFIED: Display primary affiliation change in a vertical table ---
             current_primary_id = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
@@ -591,48 +660,82 @@ def render_enrichment_page(session, selected_hcp_df):
             current_primary_name = current_primary_name_query[0].HCO_NAME if current_primary_name_query and not current_primary_name_query[0].HCO_NAME is None else "N/A"
             
             new_primary_id = st.session_state.primary_hco_id
-            new_primary_name_query = session.sql(f"SELECT HCO_NAME FROM HCP_HCO_AFFILIATION WHERE HCO_ID = '{new_primary_id}'").collect() if new_primary_id else None
-            new_primary_name = new_primary_name_query[0].HCO_NAME if new_primary_name_query and not new_primary_name_query[0].HCO_NAME is None else "N/A"
+            # Get HCO data from session state (stored when "Set as Primary" was clicked)
+            new_hco_data = st.session_state.get('primary_hco_data', {})
+            new_primary_name = new_hco_data.get('HCO NAME', new_hco_data.get('HCO_Name', 'N/A'))
 
             primary_change_df = pd.DataFrame({
                 "Field": ["ID", "Name", "Current Primary HCO", "Proposed Primary HCO"],
                 "Value": [
                     selected_record.get('ID'),
                     selected_record.get('NAME'),
-                    f"ID: {current_primary_id} ({current_primary_name})",
+                    f"ID: {current_primary_id} ({current_primary_name})" if current_primary_id else "None",
                     f"ID: {new_primary_id} ({new_primary_name})"
                 ]
             })
+            
+            if is_new_hcp:
+                # Add row indicating new affiliation will be created
+                new_row = pd.DataFrame({"Field": ["New Affiliation Record"], "Value": ["Will be created in HCP_HCO_AFFILIATION table"]})
+                primary_change_df = pd.concat([primary_change_df, new_row], ignore_index=True)
+            
             st.dataframe(primary_change_df.set_index('Field'), use_container_width=True)
             # --- END MODIFIED ---
 
             col1, col2 = st.columns([1, 1])
+            
+            # Different button text based on action
+            confirm_btn_text = "Yes, Create Affiliation & Set Primary" if is_new_hcp else "Yes, Set Primary"
+            
             with col1:
-                if st.button("Yes, Set Primary", key="confirm_primary_yes"):
+                if st.button(confirm_btn_text, key="confirm_primary_yes"):
                     new_primary_id = st.session_state.primary_hco_id
                     selected_id = st.session_state.selected_hcp_id
                     
-                    with st.spinner("Updating primary affiliation in Snowflake..."):
+                    # Get HCP NPI from proposed record or session state
+                    hcp_npi = st.session_state.get('proposed_record', {}).get('NPI', '')
+                    if not hcp_npi:
+                        hcp_npi = selected_record.get('NPI', '')
+                    
+                    spinner_text = "Creating affiliation and setting primary..." if is_new_hcp else "Updating primary affiliation in Snowflake..."
+                    with st.spinner(spinner_text):
                         try:
-                            npi_table = session.table("NPI")
-                            update_assignments = {"PRIMARY_AFFL_HCO_ACCOUNT_ID": new_primary_id}
-                            update_result = npi_table.update(update_assignments, col("ID") == selected_id)
-                            if update_result.rows_updated > 0:
-                                st.session_state.show_popup = True
-                                st.session_state.popup_message_info = { 'type': 'primary_success', 'hco_id': new_primary_id }
-                                st.session_state.show_primary_confirm_dialog = False
-                                st.rerun()
-                            else:
-                                st.warning("Could not find the main HCP record to update.")
-                                st.session_state.show_primary_confirm_dialog = False
-                                st.rerun()
+                            success = True
+                            
+                            # For new HCP, first insert the affiliation record
+                            if is_new_hcp and new_hco_data:
+                                # Check if affiliation already exists
+                                if not check_affiliation_exists(session, hcp_npi, new_primary_id):
+                                    success = insert_affiliation_record(session, hcp_npi, new_hco_data)
+                                    if success:
+                                        st.toast("✅ Affiliation record created successfully!", icon="✅")
+                                else:
+                                    st.info("Affiliation record already exists.")
+                            
+                            # Now update the primary affiliation in NPI table
+                            if success:
+                                npi_table = session.table("NPI")
+                                update_assignments = {"PRIMARY_AFFL_HCO_ACCOUNT_ID": new_primary_id}
+                                update_result = npi_table.update(update_assignments, col("ID") == selected_id)
+                                if update_result.rows_updated > 0:
+                                    st.session_state.show_popup = True
+                                    st.session_state.popup_message_info = { 'type': 'primary_success', 'hco_id': new_primary_id }
+                                    st.session_state.show_primary_confirm_dialog = False
+                                    st.session_state.primary_hco_data = None  # Clear stored HCO data
+                                    st.rerun()
+                                else:
+                                    st.warning("Could not find the main HCP record to update. Please ensure the record was inserted first.")
+                                    st.session_state.show_primary_confirm_dialog = False
+                                    st.rerun()
                         except Exception as e:
                             st.error(f"An error occurred during the update: {e}")
+                            import traceback
+                            st.code(traceback.format_exc())
                             st.session_state.show_primary_confirm_dialog = False
-                            st.rerun()
             with col2:
                 if st.button("Cancel", key="confirm_primary_cancel"):
                     st.session_state.show_primary_confirm_dialog = False
+                    st.session_state.primary_hco_data = None  # Clear stored HCO data
                     st.rerun()
         return
 #end of Placeholder for a potential dialog to display over the main content
@@ -886,13 +989,20 @@ def render_enrichment_page(session, selected_hcp_df):
                 except (ValueError, TypeError):
                     pass
                 
+                # Check if this is a new HCP from bypass flow
+                is_new_hcp = st.session_state.selected_hcp_id == 'empty_record'
+                
                 with row_cols[0]:
                     if is_primary:
                         st.markdown("✅ **Primary**")
                     else:
-                        if st.button("Set as Primary", key=f"set_primary_{hco_id}"):
+                        # Different button text for new HCP
+                        btn_text = "Add & Set Primary" if is_new_hcp else "Set as Primary"
+                        if st.button(btn_text, key=f"set_primary_{hco_id}"):
                             st.session_state.show_primary_confirm_dialog = True
                             st.session_state.primary_hco_id = hco_id
+                            # Store the full HCO data for insertion (needed for bypass flow)
+                            st.session_state.primary_hco_data = hco_data
                             st.rerun()
                 
                 source = hco_data.get("SOURCE", "")
@@ -1278,6 +1388,8 @@ if "show_confirm_dialog" not in st.session_state:
     st.session_state.show_confirm_dialog = False
 if "show_primary_confirm_dialog" not in st.session_state:
     st.session_state.show_primary_confirm_dialog = False
+if "primary_hco_data" not in st.session_state:
+    st.session_state.primary_hco_data = None
 
 session = get_snowflake_session()
 os.environ["PERPLEXITY_API_KEY"] = st.secrets["perplexity"]["api_key"]
