@@ -505,7 +505,7 @@ def render_enrichment_page(session, selected_hcp_df):
                         with st.spinner(spinner_text):
                             try:
                                 db_column_map = {
-                                    "Name": "NAME", "Address Line1": "ADDRESS1", "Address Line2": "ADDRESS2",
+                                    "Name": "LAST_NM", "Address Line1": "ADDRESS1", "Address Line2": "ADDRESS2",
                                     "City": "CITY", "State": "STATE", "ZIP": "ZIP"
                                 }
                                 assignments = {}
