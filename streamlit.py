@@ -1243,16 +1243,26 @@ def render_main_page(session):
                             hco_col1, hco_col2 = st.columns(2)
                             
                             primary_hco_id = selected_record.get("PRIMARY_AFFL_HCO_ACCOUNT_ID")
+                            hco_id_val = str(primary_hco_id) if pd.notna(primary_hco_id) and primary_hco_id is not None else "N/A"
                             
-                            hco_col1.markdown(f'<div class="detail-key">HCP ID:</div><div class="detail-value">{get_safe_value(selected_record, "ID")}</div>', unsafe_allow_html=True)
+                            # Fetch HCO details from database if primary_hco_id exists
+                            hco_name_val = "N/A"
+                            hco_npi_val = "N/A"
+                            if pd.notna(primary_hco_id) and primary_hco_id is not None:
+                                try:
+                                    hco_query = session.sql(f"SELECT NAME, NPI FROM HCO WHERE ID = '{primary_hco_id}'").collect()
+                                    if hco_query:
+                                        hco_name_val = hco_query[0].NAME if hco_query[0].NAME else "N/A"
+                                        hco_npi_val = str(hco_query[0].NPI) if hco_query[0].NPI else "N/A"
+                                except:
+                                    pass
                             
-                            hco_id_val = str(int(primary_hco_id)) if pd.notna(primary_hco_id) and primary_hco_id is not None else "N/A"
-                            hco_col2.markdown(f'<div class="detail-key">Primary HCO NPI:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
+                            hco_col1.markdown(f'<div class="detail-key">HCO ID:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
+                            hco_col2.markdown(f'<div class="detail-key">HCO NPI:</div><div class="detail-value">{hco_npi_val}</div>', unsafe_allow_html=True)
                             
-                            hco_col1.markdown(f'<div class="detail-key">HCP Name:</div><div class="detail-value">{get_safe_value(selected_record, "NAME")}</div>', unsafe_allow_html=True)
-                            # Removed the line for "Primary HCO Name" as requested.
+                            hco_col1.markdown(f'<div class="detail-key">HCO Name:</div><div class="detail-value">{hco_name_val}</div>', unsafe_allow_html=True)
                             
-                            
+
                     # --- End Two-Column Layout for Details Sections ---
                     st.divider()
                     
