@@ -1253,9 +1253,6 @@ def render_main_page(session):
                             hcp_id = selected_record.get("ID")
                             hcp_npi = selected_record.get("NPI")
                             
-                            # DEBUG
-                            st.write(f"DEBUG: hcp_id={hcp_id}, hcp_npi={hcp_npi}, primary_hco_id={primary_hco_id}")
-                            
                             try:
                                 if pd.notna(primary_hco_id) and primary_hco_id is not None:
                                     # Use the primary HCO ID to get details
@@ -1266,16 +1263,12 @@ def render_main_page(session):
                                         hco_npi_val = str(hco_query[0].NPI) if hco_query[0].NPI else "N/A"
                                 else:
                                     # Fetch from HCP_HCO_AFFILIATION table using HCP_NPI
-                                    aff_sql = f"SELECT HCO_ID, HCO_NAME FROM HCP_HCO_AFFILIATION WHERE HCP_NPI = '{hcp_npi}' LIMIT 1"
-                                    st.write(f"DEBUG: aff_sql={aff_sql}")
-                                    aff_query = session.sql(aff_sql).collect()
-                                    st.write(f"DEBUG: aff_query result count={len(aff_query)}")
+                                    aff_query = session.sql(f"SELECT HCO_ID, HCO_NAME FROM HCP_HCO_AFFILIATION WHERE HCP_NPI = '{hcp_npi}' LIMIT 1").collect()
                                     if aff_query:
-                                        st.write(f"DEBUG: aff_query[0]={aff_query[0]}")
                                         hco_id_val = str(aff_query[0].HCO_ID) if aff_query[0].HCO_ID else "N/A"
                                         hco_name_val = aff_query[0].HCO_NAME if aff_query[0].HCO_NAME else "N/A"
-                            except Exception as e:
-                                st.write(f"DEBUG: Exception={e}")
+                            except:
+                                pass
                             
                             hco_col1.markdown(f'<div class="detail-key">HCO ID:</div><div class="detail-value">{hco_id_val}</div>', unsafe_allow_html=True)
                             hco_col2.markdown(f'<div class="detail-key">HCO NPI:</div><div class="detail-value">{hco_npi_val}</div>', unsafe_allow_html=True)
