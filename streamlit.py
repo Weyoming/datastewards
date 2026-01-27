@@ -526,21 +526,27 @@ def render_enrichment_page(session, selected_hcp_df):
                                 
                                 if is_new_record:
                                     # Get max ID and add 1 for new record
-                                    # NPI table uses string IDs in format 'SHA_000006494'
-                                    max_id_result = session.sql(f'SELECT MAX(CAST(REPLACE(ID, \'SHA_\', \'\') AS INT)) AS MAX_NUM FROM "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" WHERE ID LIKE \'SHA_%\'').collect()
-                                    max_num = max_id_result[0].MAX_NUM if max_id_result[0].MAX_NUM else 0
-                                    new_num = int(max_num) + 1
-                                    new_id = f"SHA_{new_num:09d}"  # Format as SHA_000000001                                    
+                                    # NPI table uses numeric IDs
+                                    max_id_result = session.sql(f'SELECT COALESCE(MAX(ID), 0) AS MAX_ID FROM "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}"').collect()
+                                    max_id = max_id_result[0].MAX_ID if max_id_result[0].MAX_ID else 0
+                                    new_id = int(max_id) + 1
                                     # Add ID to columns and assignments
                                     columns_list.insert(0, "ID")
                                     assignments["ID"] = new_id
                                     
-                                    # INSERT new record using SQL
+                                    # INSERT new record using SQL - ID is numeric, others are strings
                                     col_names = ", ".join(columns_list)
-                                    col_values = ", ".join([f"'{str(assignments[c])}'" if assignments[c] is not None else "NULL" for c in columns_list])
+                                    col_values_list = []
+                                    for c in columns_list:
+                                        if c == "ID":
+                                            col_values_list.append(str(assignments[c]))  # Numeric, no quotes
+                                        elif assignments[c] is not None:
+                                            col_values_list.append(f"'{str(assignments[c])}'")
+                                        else:
+                                            col_values_list.append("NULL")
+                                    col_values = ", ".join(col_values_list)
                                     insert_sql = f'INSERT INTO "{DATABASE}"."{SCHEMA}"."{YOUR_TABLE_NAME}" ({col_names}) VALUES ({col_values})'
                                     session.sql(insert_sql).collect()
-                                    st.write("DEBUG: INSERT executed successfully")
                                     cols_str = ", ".join(columns_list)
                                     custom_message = f"New record inserted successfully with ID: {new_id}. Columns: {cols_str}."
                                     st.session_state.show_popup = True
